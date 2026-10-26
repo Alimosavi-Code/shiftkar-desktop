@@ -1,0 +1,18 @@
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+/app/build
+/captures
+.externalNativeBuild
+.cxx
+
+# Signing material — NEVER commit (update-critical identity)
+/keystore/
+*.jks
+*.keystore
+# Kotlin tooling caches & logs
+.kotlin/
+*.log
