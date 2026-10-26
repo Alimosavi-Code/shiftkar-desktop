@@ -32,7 +32,14 @@ kotlin {
         }
 
         desktopMain.dependencies {
-            implementation(compose.desktop.currentOs)
+            val osName = System.getProperty("os.name")?.lowercase().orEmpty()
+            val osArch = System.getProperty("os.arch")?.lowercase().orEmpty()
+            if (osName.contains("win") && (osArch.contains("aarch64") || osArch.contains("arm64"))) {
+                // Compose 1.7.3 publishes windows-x64 artifact; Windows 11 ARM runs x64 native/Prism or x64 JDK cleanly
+                implementation(compose.desktop.windows_x64)
+            } else {
+                implementation(compose.desktop.currentOs)
+            }
             implementation(libs.kotlinx.coroutines.swing)
             implementation(libs.okhttp)
         }
@@ -45,7 +52,7 @@ kotlin {
 
 compose.desktop {
     application {
-        mainClass = "ir.shiftkar.neo.MainKt"
+        mainClass = "com.seyedhosseinmousavisaeedi.shiftkar.MainKt"
 
         nativeDistributions {
             // Note: TargetFormat.AppImage is omitted on macOS because the Compose Gradle plugin
@@ -59,7 +66,7 @@ compose.desktop {
                 TargetFormat.Rpm
             )
             packageName = "ShiftKar"
-            packageVersion = "6.0.4"
+            packageVersion = "6.1.0"
             // Pure ASCII for jpackage / Windows WiX / macOS hdiutil compatibility
             description = "ShiftKar Smart Shift Calendar"
             vendor = "Seyed Hossein Mousavi Saeedi"
@@ -69,8 +76,9 @@ compose.desktop {
             modules("java.instrument", "java.management", "java.naming", "java.prefs", "java.sql", "jdk.unsupported")
 
             macOS {
-                bundleID = "com.seyedhosseinmousavisaeedi.shiftkar.desktop"
+                bundleID = "com.seyedhosseinmousavisaeedi.shiftkar"
                 dockName = "ShiftKar"
+                iconFile.set(project.file("packaging/ShiftKar.icns"))
             }
             windows {
                 menuGroup = "ShiftKar"
@@ -78,6 +86,7 @@ compose.desktop {
                 dirChooser = true
                 perUserInstall = true
                 upgradeUuid = "8f49d561-74e2-4a89-9a0b-3c92b0e4f604"
+                iconFile.set(project.file("packaging/ShiftKar.ico"))
             }
             linux {
                 packageName = "shiftkar"
@@ -85,6 +94,7 @@ compose.desktop {
                 menuGroup = "Utility"
                 appCategory = "Utility"
                 shortcut = true
+                iconFile.set(project.file("packaging/ShiftKar.png"))
             }
         }
     }

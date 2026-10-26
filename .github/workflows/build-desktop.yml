@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 env:
-  APP_VERSION: "6.0.4"
+  APP_VERSION: "6.1.0"
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
@@ -68,7 +68,8 @@ jobs:
           Type=Application
           Categories=Utility;
           DESKTOP_EOF
-          cp composeApp/src/desktopMain/resources/drawable/sk_logo.png "$APP_DIR/ShiftKar.png"
+          cp composeApp/packaging/ShiftKar.png "$APP_DIR/ShiftKar.png"
+          cp composeApp/packaging/ShiftKar.png "$APP_DIR/.DirIcon"
           ln -sf bin/ShiftKar "$APP_DIR/AppRun"
           chmod +x "$APP_DIR/AppRun" "$APP_DIR/bin/ShiftKar"
           ARCH=x86_64 /tmp/appimagetool --appimage-extract-and-run "$APP_DIR" "dist/linux-x64/ShiftKar-${APP_VERSION}-linux-x64.AppImage"
@@ -131,7 +132,8 @@ jobs:
           Type=Application
           Categories=Utility;
           DESKTOP_EOF
-          cp composeApp/src/desktopMain/resources/drawable/sk_logo.png "$APP_DIR/ShiftKar.png"
+          cp composeApp/packaging/ShiftKar.png "$APP_DIR/ShiftKar.png"
+          cp composeApp/packaging/ShiftKar.png "$APP_DIR/.DirIcon"
           ln -sf bin/ShiftKar "$APP_DIR/AppRun"
           chmod +x "$APP_DIR/AppRun" "$APP_DIR/bin/ShiftKar"
           ARCH=aarch64 /tmp/appimagetool --appimage-extract-and-run "$APP_DIR" "dist/linux-arm64/ShiftKar-${APP_VERSION}-linux-arm64.AppImage"
@@ -276,12 +278,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17 (ARM64)
+      - name: Set up JDK 17 (Windows 11 ARM64 compatible)
         uses: actions/setup-java@v4
         with:
-          distribution: 'microsoft'
+          distribution: 'temurin'
           java-version: '17'
-          architecture: 'aarch64'
+          architecture: 'x64'
           cache: 'gradle'
 
       - name: Ensure Inno Setup & WiX are available
@@ -324,10 +326,10 @@ jobs:
   # ==================================================================
   # 7. AUTOMATIC GITHUB RELEASE & TAG PUBLISHER
   #    Runs after all 6 platform builds succeed, creates/updates tag
-  #    `v6.0.4`, and uploads all standardized installers to Releases!
+  #    `v6.1.0`, and uploads all standardized installers to Releases!
   # ==================================================================
   publish-release:
-    name: Publish GitHub Release (v6.0.4)
+    name: Publish GitHub Release (v6.1.0)
     needs:
       - build-linux-x64
       - build-linux-arm64

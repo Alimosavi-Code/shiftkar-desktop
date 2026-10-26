@@ -1,27 +1,28 @@
 {
-  "versionCode": 64,
-  "versionName": "6.0.4",
-  "releaseDate": "1405/08/04",
+  "versionCode": 65,
+  "versionName": "6.1.0",
+  "releaseDate": "۱۴۰۵/۰۸/۰۴",
   "isForceUpdate": false,
-  "downloadUrl": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.0.4/ShiftKar-6.0.4-windows-x64-setup.exe",
+  "downloadUrl": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.1.0/ShiftKar-6.1.0-windows-x64-setup.exe",
   "downloads": {
-    "windows-x64": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.0.4/ShiftKar-6.0.4-windows-x64-setup.exe",
-    "windows-x64-msi": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.0.4/ShiftKar-6.0.4-windows-x64.msi",
-    "windows-arm64": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.0.4/ShiftKar-6.0.4-windows-arm64-setup.exe",
-    "windows-arm64-msi": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.0.4/ShiftKar-6.0.4-windows-arm64.msi",
-    "linux-x64-rpm": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.0.4/ShiftKar-6.0.4-linux-x64.rpm",
-    "linux-x64-deb": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.0.4/ShiftKar-6.0.4-linux-x64.deb",
-    "linux-x64-appimage": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.0.4/ShiftKar-6.0.4-linux-x64.AppImage",
-    "linux-arm64-rpm": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.0.4/ShiftKar-6.0.4-linux-arm64.rpm",
-    "linux-arm64-deb": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.0.4/ShiftKar-6.0.4-linux-arm64.deb",
-    "linux-arm64-appimage": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.0.4/ShiftKar-6.0.4-linux-arm64.AppImage",
-    "macos-arm64": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.0.4/ShiftKar-6.0.4-macos-arm64.dmg",
-    "macos-x64": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.0.4/ShiftKar-6.0.4-macos-x64.dmg"
+    "windows-x64": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.1.0/ShiftKar-6.1.0-windows-x64-setup.exe",
+    "windows-x64-msi": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.1.0/ShiftKar-6.1.0-windows-x64.msi",
+    "windows-arm64": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.1.0/ShiftKar-6.1.0-windows-arm64-setup.exe",
+    "windows-arm64-msi": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.1.0/ShiftKar-6.1.0-windows-arm64.msi",
+    "macos-arm64": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.1.0/ShiftKar-6.1.0-macos-arm64.dmg",
+    "macos-x64": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.1.0/ShiftKar-6.1.0-macos-x64.dmg",
+    "linux-x64-rpm": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.1.0/ShiftKar-6.1.0-linux-x64.rpm",
+    "linux-x64-deb": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.1.0/ShiftKar-6.1.0-linux-x64.deb",
+    "linux-x64-appimage": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.1.0/ShiftKar-6.1.0-linux-x64.AppImage",
+    "linux-arm64-rpm": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.1.0/ShiftKar-6.1.0-linux-arm64.rpm",
+    "linux-arm64-deb": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.1.0/ShiftKar-6.1.0-linux-arm64.deb",
+    "linux-arm64-appimage": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.1.0/ShiftKar-6.1.0-linux-arm64.AppImage"
   },
   "changelog": [
-    "انتشار نسخهٔ رسمی دسکتاپ شیفت‌کار برای ویندوز، لینوکس (DEB / RPM / AppImage) و مک (Intel / Apple Silicon)",
-    "پشتیبانی از تشخیص خودکار تم روشن/تیره سیستم‌عامل در لینوکس (فدورا/گنوم/KDE)، ویندوز و مک",
-    "بهینه‌سازی کامل نمای جدولی و نوار کنترل پنجره برای صفحات عریض دسکتاپ",
-    "سیستم بروزرسانی درون‌برنامه‌ای هوشمند با تشخیص خودکار سیستم‌عامل و معماری پردازنده"
+    "بازآرایی کامل نام پکیج — آخرین ردپای namespace قدیمی از همهٔ کلاس‌ها و فایل‌های برنامه حذف شد (هویت رسمی: com.seyedhosseinmousavisaeedi.shiftkar)",
+    "آیکون‌های اختصاصی جدید برای برنامه و تمام نصاب‌های دسکتاپ (ویندوز .exe/.msi، مک .dmg و لینوکس .deb/.rpm/.AppImage)",
+    "شروع سرد روان‌تر — خواندن و پارس رویدادها از رشتهٔ اصلی به نخ پس‌زمینه منتقل شد؛ اسپلش تا آماده‌شدن داده روی صفحه می‌ماند",
+    "رفع باگ: تم‌های قدیمی (nebula/gold/…) دیگر هنگام اولین تغییر تنظیمات بی‌صدا به آبی ریست نمی‌شوند",
+    "بهینه‌سازی نمای جدولی تمام‌عرض در دسکتاپ، فهرست یادداشت‌ها و انتخابگر ماه — مرتب‌سازی و قالب‌بندی تاریخ‌ها فقط یک‌بار انجام می‌شود"
   ]
 }
