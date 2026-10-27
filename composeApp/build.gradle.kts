@@ -9,18 +9,6 @@ plugins {
     alias(libs.plugins.kotlinSerialization)
 }
 
-// Automatically delete legacy package directories (ir/shiftkar/neo) if extracted over an older checkout
-listOf(
-    "src/commonMain/kotlin/ir",
-    "src/desktopMain/kotlin/ir",
-    "src/commonTest/kotlin/ir"
-).forEach { relPath ->
-    val legacyDir = project.file(relPath)
-    if (legacyDir.exists()) {
-        legacyDir.deleteRecursively()
-    }
-}
-
 kotlin {
     jvm("desktop") {
         @OptIn(ExperimentalKotlinGradlePluginApi::class)
@@ -78,7 +66,7 @@ compose.desktop {
                 TargetFormat.Rpm
             )
             packageName = "ShiftKar"
-            packageVersion = "6.1.0"
+            packageVersion = "6.2.0"
             // Pure ASCII for jpackage / Windows WiX / macOS hdiutil compatibility
             description = "ShiftKar Smart Shift Calendar"
             vendor = "Seyed Hossein Mousavi Saeedi"

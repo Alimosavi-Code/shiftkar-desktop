@@ -1,4 +1,4 @@
-# ShiftKar Neo — شیفت‌کار نئو (Desktop Edition v6.1.0) 🖥️
+# ShiftKar Neo — شیفت‌کار نئو (Desktop Edition v6.2.0) 🖥️
 
 نسخهٔ دسکتاپ **شیفت‌کار نئو** با **Kotlin + Compose Multiplatform for Desktop** برای:
 - 🐧 **Linux** (`.deb`, `.rpm`, `.AppImage`)
@@ -42,17 +42,17 @@
 - **روی Linux** (نیاز به بستهٔ پایهٔ `fakeroot` و `dpkg-dev` که معمولاً روی اوبونتو/دبیان نصب است):
   ```bash
   ./gradlew :composeApp:packageDeb
-  # خروجی در: composeApp/build/compose/binaries/main/deb/shiftkar_6.1.0-1_amd64.deb
+  # خروجی در: composeApp/build/compose/binaries/main/deb/shiftkar_6.2.0-1_amd64.deb
   ```
 - **روی Windows** (نیاز به نصب بودن [WiX Toolset v3](https://wixtoolset.org/) برای `.msi` یا Inno Setup برای `.exe`):
   ```powershell
   .\gradlew.bat :composeApp:packageMsi
-  # خروجی در: composeApp\build\compose\binaries\main\msi\ShiftKar-6.1.0.msi
+  # خروجی در: composeApp\build\compose\binaries\main\msi\ShiftKar-6.2.0.msi
   ```
 - **روی macOS**:
   ```bash
   ./gradlew :composeApp:packageDmg
-  # خروجی در: composeApp/build/compose/binaries/main/dmg/ShiftKar-6.1.0.dmg
+  # خروجی در: composeApp/build/compose/binaries/main/dmg/ShiftKar-6.2.0.dmg
   ```
 
 ---
@@ -65,7 +65,7 @@
    ```bash
    git init
    git add .
-   git commit -m "Initial ShiftKar Desktop v6.1.0"
+   git commit -m "Initial ShiftKar Desktop v6.2.0"
    git branch -M main
    git remote add origin https://github.com/<YOUR_USERNAME>/<YOUR_REPO>.git
    git push -u origin main

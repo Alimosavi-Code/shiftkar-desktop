@@ -1,4 +1,4 @@
-name: Build & Release Desktop Installers (x64 + ARM64 for Linux, macOS & Windows)
+name: Build & Release Desktop Installers (v6.2.0 — x64 + ARM64 + SHA-256)
 
 on:
   push:
@@ -6,10 +6,10 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 env:
-  APP_VERSION: "6.1.0"
+  APP_VERSION: "6.2.0"
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
@@ -286,35 +286,34 @@ jobs:
           architecture: 'x64'
           cache: 'gradle'
 
-      - name: Ensure Inno Setup & WiX are available
+      - name: Ensure WiX Toolset v3 & Inno Setup are in PATH
         shell: powershell
         run: |
+          if (-not (Get-Command candle.exe -ErrorAction SilentlyContinue)) {
+            choco install wixtoolset -y --no-progress
+          }
           if (-not (Get-Command ISCC.exe -ErrorAction SilentlyContinue)) {
             choco install innosetup -y --no-progress
-          }
-          if (Test-Path "C:\Program Files (x86)\Inno Setup 6") {
-            echo "C:\Program Files (x86)\Inno Setup 6" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           }
           $wixBin = Get-ChildItem "C:\Program Files (x86)\WiX Toolset*" -Directory -ErrorAction SilentlyContinue | Select-Object -First 1
           if ($wixBin) {
             echo "$($wixBin.FullName)\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           }
+          if (Test-Path "C:\Program Files (x86)\Inno Setup 6") {
+            echo "C:\Program Files (x86)\Inno Setup 6" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          }
 
       - name: Package Windows ARM64 Distributable, EXE & MSI
         shell: powershell
         run: |
-          .\gradlew.bat :composeApp:createDistributable --stacktrace --no-daemon
+          .\gradlew.bat :composeApp:packageMsi :composeApp:packageExe :composeApp:createDistributable --stacktrace --no-daemon
           New-Item -ItemType Directory -Force -Path "dist\windows-arm64" | Out-Null
           Compress-Archive -Path "composeApp\build\compose\binaries\main\app\*" -DestinationPath "dist\windows-arm64\ShiftKar-$($env:APP_VERSION)-windows-arm64-portable.zip" -Force
-          .\gradlew.bat :composeApp:packageExe --stacktrace --no-daemon
           Get-ChildItem "composeApp\build\compose\binaries\main\exe\*.exe" -ErrorAction SilentlyContinue | ForEach-Object {
             Copy-Item $_.FullName -Destination "dist\windows-arm64\ShiftKar-$($env:APP_VERSION)-windows-arm64-setup.exe"
           }
-          if (Get-Command candle.exe -ErrorAction SilentlyContinue) {
-            .\gradlew.bat :composeApp:packageMsi --stacktrace --no-daemon
-            Get-ChildItem "composeApp\build\compose\binaries\main\msi\*.msi" -ErrorAction SilentlyContinue | ForEach-Object {
-              Copy-Item $_.FullName -Destination "dist\windows-arm64\ShiftKar-$($env:APP_VERSION)-windows-arm64.msi"
-            }
+          Get-ChildItem "composeApp\build\compose\binaries\main\msi\*.msi" -ErrorAction SilentlyContinue | ForEach-Object {
+            Copy-Item $_.FullName -Destination "dist\windows-arm64\ShiftKar-$($env:APP_VERSION)-windows-arm64.msi"
           }
 
       - name: Upload Windows ARM64 Artifacts
@@ -324,12 +323,10 @@ jobs:
           path: dist/windows-arm64/*
 
   # ==================================================================
-  # 7. AUTOMATIC GITHUB RELEASE & TAG PUBLISHER
-  #    Runs after all 6 platform builds succeed, creates/updates tag
-  #    `v6.1.0`, and uploads all standardized installers to Releases!
+  # 7. AUTOMATIC GITHUB RELEASE, SHA-256 GENERATOR & TAG PUBLISHER
   # ==================================================================
   publish-release:
-    name: Publish GitHub Release (v6.1.0)
+    name: Publish GitHub Release & SHA-256 Checksums (v6.2.0)
     needs:
       - build-linux-x64
       - build-linux-arm64
@@ -350,8 +347,22 @@ jobs:
           path: release-assets
           merge-multiple: true
 
-      - name: List Release Files
-        run: ls -lh release-assets/
+      - name: Generate SHA-256 Checksums (.sha256 companion files & SHA256SUMS.txt)
+        run: |
+          cd release-assets
+          rm -f SHA256SUMS.txt *.sha256
+          for f in *; do
+            if [ -f "$f" ]; then
+              HASH=$(sha256sum "$f" | awk '{print $1}')
+              echo "$HASH" > "${f}.sha256"
+              echo "$HASH  $f" >> SHA256SUMS.txt
+            fi
+          done
+          echo "### Generated SHA-256 Checksums for v${APP_VERSION}" >> $GITHUB_STEP_SUMMARY
+          echo '```text' >> $GITHUB_STEP_SUMMARY
+          cat SHA256SUMS.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          ls -lh
 
       - name: Create Tag & Publish GitHub Release
         env:
@@ -359,12 +370,9 @@ jobs:
         run: |
           TAG="v${APP_VERSION}"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release $TAG already exists — uploading/overwriting assets..."
+            echo "Release $TAG already exists — uploading assets and SHA-256 checksums..."
             gh release upload "$TAG" release-assets/* --clobber
           else
             echo "Creating new GitHub Release $TAG..."
-            gh release create "$TAG" release-assets/* \
-              --title "ShiftKar Desktop v${APP_VERSION}" \
-              --notes "Automated multi-architecture Desktop release (Linux DEB/RPM/AppImage x64 & ARM64, macOS Apple Silicon & Intel DMG, Windows x64 & ARM64 EXE/MSI)." \
-              --target "${{ github.sha }}"
+            gh release create "$TAG" release-assets/*               --title "ShiftKar Desktop v${APP_VERSION}"               --notes-file release-assets/SHA256SUMS.txt               --target "${{ github.sha }}"
           fi

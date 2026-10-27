@@ -25,6 +25,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.components.SkIcons
+import com.seyedhosseinmousavisaeedi.shiftkar.ui.components.rememberLiveToday
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.components.clickableNoRipple
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.components.glass
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.theme.IRANSansX
@@ -45,7 +46,7 @@ fun RosterScreen(vm: AppViewModel) {
     val sk = LocalSk.current
     val s = vm.settings.collectAsState().value
     val haptic = rememberHaptics(s.hapticOn)
-    val today = remember { todayJalaali() }
+    val today = rememberLiveToday()
     val group = s.myGroup.toShiftGroup()
 
     var year by remember(s.viewYear) { mutableIntStateOf(s.viewYear) }

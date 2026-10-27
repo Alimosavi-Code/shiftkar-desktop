@@ -31,7 +31,11 @@ import java.awt.Toolkit
 import java.awt.datatransfer.StringSelection
 import java.awt.image.BufferedImage
 import java.io.File
+import java.io.FileOutputStream
 import java.net.URI
+import java.nio.charset.StandardCharsets
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.util.concurrent.TimeUnit
 import javax.imageio.ImageIO
 
@@ -41,7 +45,7 @@ actual val supportsBackdropBlur: Boolean = true
 
 private fun execCommandOutput(vararg cmd: String): String? = runCatching {
     val proc = ProcessBuilder(*cmd).redirectErrorStream(true).start()
-    val finished = proc.waitFor(1500, TimeUnit.MILLISECONDS)
+    val finished = proc.waitFor(1200, TimeUnit.MILLISECONDS)
     if (!finished) {
         proc.destroyForcibly()
         return@runCatching null
@@ -49,11 +53,17 @@ private fun execCommandOutput(vararg cmd: String): String? = runCatching {
     proc.inputStream.bufferedReader().readText().trim()
 }.getOrNull()
 
+@Volatile
+private var cachedSystemDark: Boolean = false
+
+@Volatile
+private var lastDarkProbeAt: Long = 0L
+
 /**
- * Reliable OS dark-mode detector for Linux (Fedora GNOME / KDE Plasma / XDG Desktop Portal),
- * Windows (Registry AppsUseLightTheme), and macOS (AppleInterfaceStyle).
+ * Probes OS dark mode on a background thread (never blocks startup UI thread).
+ * Specifically parses `ColorScheme=` in `~/.config/kdeglobals` on KDE.
  */
-actual fun isSystemDarkMode(): Boolean {
+private fun probeSystemDarkModeBlocking(): Boolean {
     val os = System.getProperty("os.name")?.lowercase().orEmpty()
     return when {
         os.contains("linux") -> {
@@ -78,8 +88,9 @@ actual fun isSystemDarkMode(): Boolean {
 
             val kdeGlobals = File(System.getProperty("user.home", "."), ".config/kdeglobals")
             if (kdeGlobals.exists()) {
-                val text = runCatching { kdeGlobals.readText().lowercase() }.getOrDefault("")
-                if (text.contains("breezedark") || text.contains("dark")) return true
+                val lines = runCatching { kdeGlobals.readLines() }.getOrDefault(emptyList())
+                val schemeLine = lines.firstOrNull { it.trim().startsWith("ColorScheme=", ignoreCase = true) }
+                if (schemeLine != null && schemeLine.lowercase().contains("dark")) return true
             }
             false
         }
@@ -99,19 +110,107 @@ actual fun isSystemDarkMode(): Boolean {
     }
 }
 
+actual fun isSystemDarkMode(): Boolean {
+    val now = System.currentTimeMillis()
+    if (lastDarkProbeAt == 0L) {
+        lastDarkProbeAt = now
+        Thread({
+            cachedSystemDark = runCatching { probeSystemDarkModeBlocking() }.getOrDefault(false)
+        }, "shiftkar-theme-init").apply { isDaemon = true; start() }
+        return cachedSystemDark
+    }
+    if (now - lastDarkProbeAt >= 8_000L) {
+        lastDarkProbeAt = now
+        cachedSystemDark = runCatching { probeSystemDarkModeBlocking() }.getOrDefault(cachedSystemDark)
+    }
+    return cachedSystemDark
+}
+
 private fun desktopStorageDir(): File {
     val home = System.getProperty("user.home") ?: "."
-    return File(home, ".shiftkar-neo").apply { mkdirs() }
+    val legacyDir = File(home, ".shiftkar-neo")
+    if (legacyDir.exists()) return legacyDir
+    val os = System.getProperty("os.name")?.lowercase().orEmpty()
+    val base = when {
+        os.contains("win") -> System.getenv("APPDATA")?.let { File(it, "ShiftKar") }
+        os.contains("mac") -> File(home, "Library/Application Support/ShiftKar")
+        else -> (System.getenv("XDG_CONFIG_HOME")?.takeIf { it.isNotBlank() }?.let { File(it) } ?: File(home, ".config")).let { File(it, "shiftkar") }
+    } ?: legacyDir
+    return base.apply { mkdirs() }
 }
 
 actual fun readAppStorageText(name: String): String? {
-    val file = File(desktopStorageDir(), name)
-    return if (file.exists()) runCatching { file.readText() }.getOrNull() else null
+    val dir = desktopStorageDir()
+    val file = File(dir, name)
+    if (file.exists() && file.length() > 0L) {
+        runCatching { return file.readText(StandardCharsets.UTF_8) }
+    }
+    val bak = File(dir, "$name.bak")
+    if (bak.exists() && bak.length() > 0L) {
+        runCatching { return bak.readText(StandardCharsets.UTF_8) }
+    }
+    return null
 }
 
+/**
+ * If a primary storage file fails JSON parsing, moves it to `.corrupt` and returns `.bak` content if available.
+ */
+actual fun recoverAppStorageBackup(name: String): String? {
+    val dir = desktopStorageDir()
+    val file = File(dir, name)
+    if (file.exists()) {
+        runCatching {
+            Files.move(
+                file.toPath(),
+                File(dir, "$name.corrupt").toPath(),
+                StandardCopyOption.REPLACE_EXISTING
+            )
+        }
+    }
+    val bak = File(dir, "$name.bak")
+    return if (bak.exists() && bak.length() > 0L) {
+        runCatching { bak.readText(StandardCharsets.UTF_8) }.getOrNull()
+    } else null
+}
+
+/**
+ * Atomic file write: writes to `<name>.tmp`, flushes descriptor to disk, copies previous valid
+ * file to `<name>.bak`, and atomically renames `<name>.tmp` -> `<name>`.
+ */
 actual fun writeAppStorageText(name: String, content: String) {
-    val file = File(desktopStorageDir(), name)
-    runCatching { file.writeText(content) }
+    runCatching {
+        val dir = desktopStorageDir()
+        val target = File(dir, name)
+        val tmp = File(dir, "$name.tmp")
+        val bak = File(dir, "$name.bak")
+
+        FileOutputStream(tmp).use { fos ->
+            fos.write(content.toByteArray(StandardCharsets.UTF_8))
+            fos.flush()
+            runCatching { fos.fd.sync() }
+        }
+
+        if (target.exists() && target.length() > 0L) {
+            runCatching {
+                Files.copy(target.toPath(), bak.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            }
+        }
+
+        try {
+            Files.move(
+                tmp.toPath(),
+                target.toPath(),
+                StandardCopyOption.REPLACE_EXISTING,
+                StandardCopyOption.ATOMIC_MOVE
+            )
+        } catch (_: Exception) {
+            Files.move(
+                tmp.toPath(),
+                target.toPath(),
+                StandardCopyOption.REPLACE_EXISTING
+            )
+        }
+    }
 }
 
 private fun readResourceBytes(path: String): ByteArray {
@@ -188,7 +287,7 @@ actual fun saveTextFileWithDialog(defaultFileName: String, content: String): Str
     val dir = dialog.directory ?: return@runCatching null
     val fn = dialog.file ?: return@runCatching null
     val target = File(dir, fn)
-    target.writeText(content)
+    target.writeText(content, StandardCharsets.UTF_8)
     target.absolutePath
 }.getOrNull()
 
@@ -198,7 +297,7 @@ actual fun openTextFileWithDialog(): String? = runCatching {
     val dir = dialog.directory ?: return@runCatching null
     val fn = dialog.file ?: return@runCatching null
     val target = File(dir, fn)
-    if (target.exists() && target.isFile) target.readText() else null
+    if (target.exists() && target.isFile) target.readText(StandardCharsets.UTF_8) else null
 }.getOrNull()
 
 actual fun saveRosterPngWithDialog(year: Int, groupCode: String): String? = runCatching {
@@ -217,7 +316,6 @@ actual fun saveRosterPngWithDialog(year: Int, groupCode: String): String? = runC
     g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
     g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
 
-    // Load bundled IRANSansX bold font for crisp Persian rendering
     val awtFontBase = runCatching {
         java.awt.Font.createFont(
             java.awt.Font.TRUETYPE_FONT,
@@ -225,18 +323,15 @@ actual fun saveRosterPngWithDialog(year: Int, groupCode: String): String? = runC
         )
     }.getOrElse { java.awt.Font("SansSerif", java.awt.Font.BOLD, 16) }
 
-    // Background
     g2.color = Color(12, 18, 36)
     g2.fillRect(0, 0, width, height)
 
-    // Header Title
     g2.font = awtFontBase.deriveFont(java.awt.Font.BOLD, 28f)
     g2.color = Color(240, 245, 255)
     val title = "لوحه سالانه شیفت‌کار — سال ${toPersianDigits(year)} (گروه ${group.name})"
     val titleW = g2.fontMetrics.stringWidth(title)
     g2.drawString(title, (width - titleW) / 2, 52)
 
-    // Legend
     g2.font = awtFontBase.deriveFont(java.awt.Font.BOLD, 15f)
     val legends = listOf(
         Triple("صبح‌کار", Color(245, 158, 11), Color(68, 48, 14)),
@@ -253,7 +348,6 @@ actual fun saveRosterPngWithDialog(year: Int, groupCode: String): String? = runC
         lx += 135
     }
 
-    // 4 cols x 3 rows of months (RTL order: col 3 on right to col 0 on left)
     val cols = 4
     val marginX = 36
     val startY = 110
@@ -270,14 +364,12 @@ actual fun saveRosterPngWithDialog(year: Int, groupCode: String): String? = runC
         val x0 = marginX + colRtl * (cardW + gapX)
         val y0 = startY + row * (cardH + gapY)
 
-        // Card background
         g2.color = Color(22, 31, 56)
         g2.fillRoundRect(x0, y0, cardW, cardH, 24, 24)
         g2.color = Color(45, 60, 98)
         g2.stroke = BasicStroke(1.5f)
         g2.drawRoundRect(x0, y0, cardW, cardH, 24, 24)
 
-        // Month title
         g2.font = awtFontBase.deriveFont(java.awt.Font.BOLD, 18f)
         g2.color = Color(235, 242, 255)
         val mTitle = "${JALALI_MONTHS[jm - 1]} ${toPersianDigits(year)}"
@@ -289,7 +381,6 @@ actual fun saveRosterPngWithDialog(year: Int, groupCode: String): String? = runC
         val cellW = gridW / 7
         val cellH = 34
 
-        // Weekday headers (RTL)
         g2.font = awtFontBase.deriveFont(java.awt.Font.BOLD, 12f)
         for (wIdx in 0 until 7) {
             val colX = x0 + cellPadX + (6 - wIdx) * cellW

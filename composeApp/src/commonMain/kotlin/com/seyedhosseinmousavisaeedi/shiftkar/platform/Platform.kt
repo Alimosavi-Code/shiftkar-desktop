@@ -13,6 +13,8 @@ expect fun isSystemDarkMode(): Boolean
 
 expect fun readAppStorageText(name: String): String?
 
+expect fun recoverAppStorageBackup(name: String): String?
+
 expect fun writeAppStorageText(name: String, content: String)
 
 expect fun readBundledEventsJson(): String

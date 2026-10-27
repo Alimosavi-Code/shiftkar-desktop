@@ -305,3 +305,21 @@ fun Modifier.clickableNoRipple(enabled: Boolean = true, onClick: () -> Unit): Mo
         )
     )
 }
+
+/**
+ * Live Jalali date state that automatically refreshes across midnight so long-running
+ * desktop windows never freeze on yesterday's date/shift.
+ */
+@Composable
+fun rememberLiveToday(): com.seyedhosseinmousavisaeedi.shiftkar.engine.JalaliDate {
+    val state = androidx.compose.runtime.produceState(
+        initialValue = com.seyedhosseinmousavisaeedi.shiftkar.engine.todayJalaali()
+    ) {
+        while (true) {
+            kotlinx.coroutines.delay(30_000L)
+            val now = com.seyedhosseinmousavisaeedi.shiftkar.engine.todayJalaali()
+            if (now != value) value = now
+        }
+    }
+    return state.value
+}

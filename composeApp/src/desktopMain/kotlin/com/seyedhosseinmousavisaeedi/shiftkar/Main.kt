@@ -48,6 +48,7 @@ import com.seyedhosseinmousavisaeedi.shiftkar.engine.todayJalaali
 import com.seyedhosseinmousavisaeedi.shiftkar.platform.loadLogoImageBitmap
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.AppViewModel
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.components.SkIcons
+import com.seyedhosseinmousavisaeedi.shiftkar.ui.components.rememberLiveToday
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.components.ToastCenter
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.theme.IRANSansX
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.theme.LocalSk
@@ -76,7 +77,7 @@ fun main() = application {
     val vm = remember { AppViewModel() }
     val s by vm.settings.collectAsState()
 
-    val today = remember { todayJalaali() }
+    val today = rememberLiveToday()
     val todayKey = remember(today) { makeDateKey(today.jy, today.jm, today.jd) }
     val myShiftToday = remember(todayKey, s.myGroup) {
         ShiftEngine.calculateShift(todayKey, s.myGroup.toShiftGroup())

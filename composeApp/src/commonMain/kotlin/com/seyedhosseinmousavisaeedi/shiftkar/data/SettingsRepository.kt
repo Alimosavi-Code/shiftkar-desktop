@@ -2,6 +2,7 @@ package com.seyedhosseinmousavisaeedi.shiftkar.data
 
 import com.seyedhosseinmousavisaeedi.shiftkar.engine.*
 import com.seyedhosseinmousavisaeedi.shiftkar.platform.readAppStorageText
+import com.seyedhosseinmousavisaeedi.shiftkar.platform.recoverAppStorageBackup
 import com.seyedhosseinmousavisaeedi.shiftkar.platform.writeAppStorageText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -79,8 +80,10 @@ object SettingsStore {
             viewYear = today.jy,
             viewMonth = today.jm
         )
-        val dto = runCatching { json.decodeFromString(PersistedSettingsDto.serializer(), raw) }.getOrNull()
-            ?: return AppSettings(viewYear = today.jy, viewMonth = today.jm)
+        val dto = runCatching { json.decodeFromString(PersistedSettingsDto.serializer(), raw) }.getOrElse {
+            val backupRaw = runCatching { recoverAppStorageBackup(FILE_NAME) }.getOrNull()
+            backupRaw?.let { runCatching { json.decodeFromString(PersistedSettingsDto.serializer(), it) }.getOrNull() }
+        } ?: return AppSettings(viewYear = today.jy, viewMonth = today.jm)
         val parsedMyGroup = runCatching { GroupFilter.valueOf(dto.myGroup) }.getOrNull()
             ?.let { if (it == GroupFilter.ALL) GroupFilter.A else it } ?: GroupFilter.A
         return AppSettings(

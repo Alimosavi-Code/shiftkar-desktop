@@ -167,6 +167,7 @@ object Holidays {
         (e.begin == null || jy >= e.begin) && (e.end == null || jy <= e.end)
 
     /** Map of "jm-jd" -> events for one Jalali year (holidays first). */
+    @Synchronized
     private fun resolveYear(jy: Int): Map<String, List<DayEvent>> {
         if (!EventsRepo.isInitialized) return emptyMap()
         yearCache[jy]?.let { return it }

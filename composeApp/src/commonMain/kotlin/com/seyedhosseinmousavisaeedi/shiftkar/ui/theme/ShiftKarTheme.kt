@@ -78,7 +78,7 @@ fun effectiveDark(mode: ThemeMode): Boolean {
         while (true) {
             val detected = withContext(Dispatchers.Default) { isSystemDarkMode() }
             if (detected != sysDark) sysDark = detected
-            delay(2000)
+            delay(10_000)
         }
     }
     return sysDark

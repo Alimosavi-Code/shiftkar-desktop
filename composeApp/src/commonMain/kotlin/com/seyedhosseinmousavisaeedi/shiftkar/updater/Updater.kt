@@ -22,16 +22,20 @@ import kotlin.concurrent.Volatile
 
 object AppUpdateConfig {
     /**
-     * آدرس فایل JSON بروزرسانی نسخهٔ دسکتاپ در مخزن Alimosavi-Code/Shiftkar
+     * آدرس اصلی فایل JSON بروزرسانی دسکتاپ در مخزن Alimosavi-Code/Shiftkar
+     * به‌همراه آدرس پشتیبان در مخزن Alimosavi-Code/shiftkar-desktop
      */
     const val DEFAULT_UPDATE_JSON_URL =
         "https://raw.githubusercontent.com/Alimosavi-Code/Shiftkar/refs/heads/main/update-desktop.json"
+
+    const val FALLBACK_UPDATE_JSON_URL =
+        "https://raw.githubusercontent.com/Alimosavi-Code/shiftkar-desktop/refs/heads/main/update-desktop.json"
 
     /** صفحهٔ Releases مخزن دسکتاپ برای «دانلود مستقیم از گیت‌هاب» در تنظیمات. */
     const val GITHUB_RELEASES_URL =
         "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/latest"
 
-    const val CURRENT_VERSION_CODE = 65
+    const val CURRENT_VERSION_CODE = 66
     const val CURRENT_VERSION_NAME = APP.VERSION
 }
 
@@ -41,6 +45,7 @@ data class UpdateInfo(
     val versionName: String,
     val downloadUrl: String,
     val downloads: Map<String, String> = emptyMap(),
+    val sha256: Map<String, String> = emptyMap(),
     val changelog: List<String>,
     val isForceUpdate: Boolean,
     val releaseDate: String
@@ -57,7 +62,7 @@ data class UpdateState(
     enum class Status { IDLE, CHECKING, AVAILABLE, UP_TO_DATE, DOWNLOADING, DOWNLOADED, INSTALLING, ERROR }
 }
 
-/** Platform-specific downloader/installer hook (full in-app downloader + native installer launcher on Desktop). */
+/** Platform-specific downloader/installer hook (with SHA-256 verification & atomic .part download on Desktop). */
 expect object PlatformUpdaterBridge {
     fun resolvePlatformDownloadUrl(info: UpdateInfo): String
     fun hasInstallPermission(): Boolean
@@ -143,13 +148,27 @@ object Updater {
         writePrefs(cur.copy(lastAvailable = null))
     }
 
+    private suspend fun fetchUpdateJsonWithFallback(customUrl: String?): String {
+        val ts = currentTimeMillis()
+        fun withCacheBuster(u: String) = if (u.contains("?")) "$u&t=$ts" else "$u?t=$ts"
+        if (!customUrl.isNullOrBlank()) {
+            return httpGetText(withCacheBuster(customUrl))
+        }
+        return try {
+            httpGetText(withCacheBuster(AppUpdateConfig.DEFAULT_UPDATE_JSON_URL))
+        } catch (primaryErr: Exception) {
+            try {
+                httpGetText(withCacheBuster(AppUpdateConfig.FALLBACK_UPDATE_JSON_URL))
+            } catch (_: Exception) {
+                throw primaryErr
+            }
+        }
+    }
+
     suspend fun check(customUrl: String? = null): UpdateState {
-        val baseUrl = if (!customUrl.isNullOrBlank()) customUrl else AppUpdateConfig.DEFAULT_UPDATE_JSON_URL
-        val targetUrl = if (baseUrl.contains("?")) "$baseUrl&t=${currentTimeMillis()}"
-                        else "$baseUrl?t=${currentTimeMillis()}"
         return try {
             _state.value = UpdateState(status = UpdateState.Status.CHECKING)
-            val bodyString = httpGetText(targetUrl)
+            val bodyString = fetchUpdateJsonWithFallback(customUrl)
             if (bodyString.isBlank()) {
                 val st = UpdateState(status = UpdateState.Status.ERROR, error = "پاسخ خالی از سرور")
                 _state.value = st
@@ -158,7 +177,9 @@ object Updater {
 
             val root = json.parseToJsonElement(bodyString).jsonObject
             val vc = root["versionCode"]?.jsonPrimitive?.intOrNull ?: getCurrentVersionCode()
-            val vn = root["versionName"]?.jsonPrimitive?.content ?: getCurrentVersionName()
+            val rawVn = root["versionName"]?.jsonPrimitive?.content ?: getCurrentVersionName()
+            // Strict sanitization of versionName against path traversal
+            val vn = rawVn.replace(Regex("[^0-9A-Za-z._-]"), "").ifBlank { getCurrentVersionName() }
             val rawDl = root["downloadUrl"]?.jsonPrimitive?.content ?: ""
             val force = root["isForceUpdate"]?.jsonPrimitive?.booleanOrNull ?: false
             val rDate = root["releaseDate"]?.jsonPrimitive?.content ?: ""
@@ -167,6 +188,15 @@ object Updater {
             val dlObj = root["downloads"] as? JsonObject
             dlObj?.forEach { (k, v) ->
                 (v as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() }?.let { downloadsMap[k] = it }
+            }
+
+            val sha256Map = mutableMapOf<String, String>()
+            when (val shaElem = root["sha256"]) {
+                is JsonObject -> shaElem.forEach { (k, v) ->
+                    (v as? JsonPrimitive)?.content?.trim()?.takeIf { it.isNotBlank() }?.let { sha256Map[k] = it }
+                }
+                is JsonPrimitive -> shaElem.content.trim().takeIf { it.isNotBlank() }?.let { sha256Map["default"] = it }
+                else -> Unit
             }
 
             val changelogElem: JsonElement? = root["changelog"]
@@ -181,6 +211,7 @@ object Updater {
                 versionName = vn,
                 downloadUrl = rawDl,
                 downloads = downloadsMap,
+                sha256 = sha256Map,
                 changelog = changelogList,
                 isForceUpdate = force,
                 releaseDate = rDate

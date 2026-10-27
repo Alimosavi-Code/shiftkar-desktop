@@ -62,12 +62,26 @@ private fun DaySheetBody(
     val haptic = rememberHaptics(s.hapticOn)
 
     var note by remember(dateKey) { mutableStateOf("") }
+    var initialNote by remember(dateKey) { mutableStateOf("") }
+    var noteLoaded by remember(dateKey) { mutableStateOf(false) }
     var saved by remember(dateKey) { mutableStateOf(false) }
     var eventsOpen by remember(dateKey) { mutableStateOf(false) }
 
     LaunchedEffect(dateKey) {
-        note = vm.notesRepo.get(dateKey)?.text ?: ""
+        val loaded = vm.notesRepo.get(dateKey)?.text ?: ""
+        note = loaded
+        initialNote = loaded
+        noteLoaded = true
         saved = false
+    }
+
+    // Auto-save note on sheet close (e.g. outside click or Esc) if modified and non-empty
+    DisposableEffect(dateKey) {
+        onDispose {
+            if (noteLoaded && !saved && note.trim() != initialNote.trim() && note.trim().isNotEmpty()) {
+                vm.saveNote(dateKey, note)
+            }
+        }
     }
 
     val j = parseDateKey(dateKey)

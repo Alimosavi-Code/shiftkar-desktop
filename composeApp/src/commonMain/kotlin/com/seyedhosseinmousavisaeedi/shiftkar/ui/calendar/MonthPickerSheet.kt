@@ -20,6 +20,7 @@ import com.seyedhosseinmousavisaeedi.shiftkar.engine.todayJalaali
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.AppViewModel
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.components.SkSheet
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.components.SkIcons
+import com.seyedhosseinmousavisaeedi.shiftkar.ui.components.rememberLiveToday
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.components.clickableNoRipple
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.components.glass
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.theme.IRANSansX
@@ -44,7 +45,7 @@ fun MonthPickerSheet(
     val sk = LocalSk.current
     val s = vm.settings.collectAsState().value
     val haptic = rememberHaptics(s.hapticOn)
-    val today = remember { todayJalaali() }
+    val today = rememberLiveToday()
 
     var year by remember { mutableIntStateOf(s.viewYear) }
 

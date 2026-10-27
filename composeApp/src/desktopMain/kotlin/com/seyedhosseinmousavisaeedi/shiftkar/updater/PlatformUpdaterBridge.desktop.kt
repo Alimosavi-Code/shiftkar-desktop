@@ -6,6 +6,7 @@ import com.seyedhosseinmousavisaeedi.shiftkar.platform.writeAppStorageText
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -13,23 +14,45 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.awt.Desktop
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
 /**
- * Real In-App Updater for Desktop (Windows, Linux, macOS):
- * 1. Detects the current OS & CPU architecture (x64 vs arm64) and Linux distro package type (.rpm on Fedora/RHEL, .deb on Ubuntu/Debian, or .AppImage)
- * 2. Streams the matching installer to `~/.shiftkar-neo/updates/` with live 0..100% progress in `UpdaterPopup`
- * 3. Launches the native OS installer automatically on completion or when "نصب نسخهٔ جدید" is clicked!
+ * Hardened In-App Updater for Desktop (v6.2.0):
+ *  1. Strict HTTPS & repository URL allowlist (`https://github.com/Alimosavi-Code/...`)
+ *  2. Sanitized versionName & single-job concurrency guard
+ *  3. Atomic `.part` streaming download with live 0..100% progress
+ *  4. Cryptographic SHA-256 verification (via `sha256` field in `update-desktop.json` OR
+ *     automatic companion `<installer>.sha256` / `SHA256SUMS.txt` from GitHub Releases)
+ *  5. Automatic exit on Windows/macOS installer launch so files are never locked
  */
 actual object PlatformUpdaterBridge {
     private const val META_FILE = "downloaded_desktop_update_version.txt"
     private val bgScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    @Volatile
+    private var activeDownloadJob: Job? = null
+
     private val http = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .followRedirects(true)
         .followSslRedirects(true)
         .build()
+
+    private val ALLOWED_URL_PREFIXES = listOf(
+        "https://github.com/Alimosavi-Code/",
+        "https://raw.githubusercontent.com/Alimosavi-Code/",
+        "https://objects.githubusercontent.com/"
+    )
+
+    private fun isAllowedDownloadUrl(url: String): Boolean =
+        ALLOWED_URL_PREFIXES.any { url.startsWith(it, ignoreCase = true) }
+
+    private fun sanitizeVersion(raw: String): String =
+        raw.replace(Regex("[^0-9A-Za-z._-]"), "").removePrefix("v").ifBlank { "0.0.0" }
 
     private fun updatesDir(): File {
         val home = System.getProperty("user.home") ?: "."
@@ -44,7 +67,7 @@ actual object PlatformUpdaterBridge {
     private fun detectLinuxPreferredFormat(): String {
         val appImageEnv = System.getenv("APPIMAGE")
         if (!appImageEnv.isNullOrBlank()) return "appimage"
-        if (File("/etc/fedora-release").exists() || File("/etc/redhat-release").exists() || File("/usr/bin/rpm").exists() && !File("/usr/bin/dpkg").exists()) {
+        if (File("/etc/fedora-release").exists() || File("/etc/redhat-release").exists() || (File("/usr/bin/rpm").exists() && !File("/usr/bin/dpkg").exists())) {
             return "rpm"
         }
         if (File("/etc/debian_version").exists() || File("/usr/bin/dpkg").exists()) {
@@ -53,32 +76,36 @@ actual object PlatformUpdaterBridge {
         return "appimage"
     }
 
-    actual fun resolvePlatformDownloadUrl(info: UpdateInfo): String {
+    private fun currentPlatformKeys(): List<String> {
         val os = System.getProperty("os.name")?.lowercase().orEmpty()
         val arm = isArm64()
         val archKey = if (arm) "arm64" else "x64"
+        return when {
+            os.contains("win") -> listOf("windows-$archKey", "windows-$archKey-exe", "windows-$archKey-msi", "windows-x64", "windows")
+            os.contains("mac") -> listOf("macos-$archKey", "macos")
+            else -> {
+                val fmt = detectLinuxPreferredFormat()
+                listOf("linux-$archKey-$fmt", "linux-$archKey-appimage", "linux-$archKey", "linux")
+            }
+        }
+    }
+
+    actual fun resolvePlatformDownloadUrl(info: UpdateInfo): String {
         val d = info.downloads
         if (d.isNotEmpty()) {
-            val matched = when {
-                os.contains("win") -> d["windows-$archKey"] ?: d["windows-$archKey-exe"] ?: d["windows-$archKey-msi"] ?: d["windows-x64"] ?: d["windows"]
-                os.contains("mac") -> d["macos-$archKey"] ?: d["macos"]
-                else -> {
-                    val fmt = detectLinuxPreferredFormat()
-                    d["linux-$archKey-$fmt"] ?: d["linux-$archKey-appimage"] ?: d["linux-$archKey"] ?: d["linux"]
-                }
-            }
-            if (!matched.isNullOrBlank()) return matched
+            val matched = currentPlatformKeys().firstNotNullOfOrNull { k -> d[k]?.takeIf { it.isNotBlank() } }
+            if (!matched.isNullOrBlank() && isAllowedDownloadUrl(matched)) return matched
         }
-        // Automatic fallback: if downloadUrl points to Alimosavi-Code/shiftkar-desktop/releases/download/vX.Y.Z/...,
-        // automatically map to the current OS & CPU standard asset filename!
-        val v = info.versionName.removePrefix("v")
+        val v = sanitizeVersion(info.versionName)
+        val os = System.getProperty("os.name")?.lowercase().orEmpty()
+        val arm = isArm64()
+        val archKey = if (arm) "arm64" else "x64"
         val baseRelease = "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v$v"
         return when {
             os.contains("win") -> "$baseRelease/ShiftKar-$v-windows-$archKey-setup.exe"
             os.contains("mac") -> if (arm) "$baseRelease/ShiftKar-$v-macos-arm64.dmg" else "$baseRelease/ShiftKar-$v-macos-x64.dmg"
             else -> {
-                val fmt = detectLinuxPreferredFormat()
-                when (fmt) {
+                when (detectLinuxPreferredFormat()) {
                     "rpm" -> "$baseRelease/ShiftKar-$v-linux-$archKey.rpm"
                     "deb" -> "$baseRelease/ShiftKar-$v-linux-$archKey.deb"
                     else -> "$baseRelease/ShiftKar-$v-linux-$archKey.AppImage"
@@ -87,8 +114,56 @@ actual object PlatformUpdaterBridge {
         }
     }
 
+    /**
+     * Resolves the expected SHA-256 hex string for the downloaded installer:
+     *  1. Checks `info.sha256` from `update-desktop.json` for the current platform key
+     *  2. Otherwise fetches `<downloadUrl>.sha256` or `SHA256SUMS.txt` published by GitHub Actions
+     */
+    private fun resolveExpectedSha256(info: UpdateInfo, downloadUrl: String): String? {
+        val hexRegex = Regex("([0-9a-fA-F]{64})")
+        if (info.sha256.isNotEmpty()) {
+            val fromJson = (currentPlatformKeys() + "default")
+                .firstNotNullOfOrNull { k -> info.sha256[k]?.trim()?.takeIf { hexRegex.matches(it) } }
+            if (fromJson != null) return fromJson.lowercase()
+        }
+        // Automatic companion .sha256 lookup on GitHub Releases
+        val cleanUrl = downloadUrl.substringBefore("?")
+        val fileName = cleanUrl.substringAfterLast("/")
+        val companionUrl = "$cleanUrl.sha256"
+        if (isAllowedDownloadUrl(companionUrl)) {
+            runCatching {
+                val req = Request.Builder().url(companionUrl).header("User-Agent", "ShiftKar-Desktop-Updater").build()
+                http.newCall(req).execute().use { resp ->
+                    if (resp.isSuccessful) {
+                        val txt = resp.body?.string().orEmpty()
+                        hexRegex.find(txt)?.groupValues?.get(1)?.lowercase()?.let { return it }
+                    }
+                }
+            }
+        }
+        // Also check SHA256SUMS.txt in the same GitHub Release directory
+        val releaseBase = cleanUrl.substringBeforeLast("/", "")
+        if (releaseBase.isNotBlank() && isAllowedDownloadUrl(releaseBase)) {
+            runCatching {
+                val sumsUrl = "$releaseBase/SHA256SUMS.txt"
+                val req = Request.Builder().url(sumsUrl).header("User-Agent", "ShiftKar-Desktop-Updater").build()
+                http.newCall(req).execute().use { resp ->
+                    if (resp.isSuccessful) {
+                        val lines = resp.body?.string().orEmpty().lines()
+                        val matchingLine = lines.firstOrNull { it.contains(fileName, ignoreCase = true) }
+                        if (matchingLine != null) {
+                            hexRegex.find(matchingLine)?.groupValues?.get(1)?.lowercase()?.let { return it }
+                        }
+                    }
+                }
+            }
+        }
+        return null
+    }
+
     private fun targetFileName(url: String, versionName: String): String {
         val cleanUrl = url.substringBefore("?")
+        val safeVer = sanitizeVersion(versionName)
         val ext = when {
             cleanUrl.endsWith(".msi", ignoreCase = true) -> ".msi"
             cleanUrl.endsWith(".exe", ignoreCase = true) -> ".exe"
@@ -107,12 +182,17 @@ actual object PlatformUpdaterBridge {
                 }
             }
         }
-        return "ShiftKar-update-$versionName$ext"
+        return "ShiftKar-update-$safeVer$ext"
     }
 
     private fun findDownloadedInstallerFile(): File? {
         val files = updatesDir().listFiles() ?: return null
-        return files.firstOrNull { it.isFile && it.length() > 0L && it.name.startsWith("ShiftKar-update-") }
+        return files.firstOrNull {
+            it.isFile &&
+                it.length() > 0L &&
+                it.name.startsWith("ShiftKar-update-") &&
+                !it.name.endsWith(".part", ignoreCase = true)
+        }
     }
 
     actual fun hasInstallPermission(): Boolean = true
@@ -120,16 +200,23 @@ actual object PlatformUpdaterBridge {
     actual fun openInstallPermissionSettings() {}
 
     actual fun hasDownloadedUpdate(targetVersionCode: Int): Boolean {
+        if (targetVersionCode <= 0) return false
         val f = findDownloadedInstallerFile() ?: return false
-        if (targetVersionCode <= 0) return f.exists()
         val saved = runCatching { readAppStorageText(META_FILE)?.trim()?.toIntOrNull() }.getOrNull() ?: -1
-        return saved == targetVersionCode && f.exists()
+        return saved == targetVersionCode && f.exists() && f.length() > 0L
     }
 
     actual fun startBackgroundDownload(info: UpdateInfo, onStateUpdate: (UpdateState) -> Unit) {
+        if (activeDownloadJob?.isActive == true) return
         val downloadUrl = resolvePlatformDownloadUrl(info)
-        if (downloadUrl.isBlank()) {
-            openExternalUrl(AppUpdateConfig.GITHUB_RELEASES_URL)
+        if (downloadUrl.isBlank() || !isAllowedDownloadUrl(downloadUrl)) {
+            onStateUpdate(
+                UpdateState(
+                    status = UpdateState.Status.ERROR,
+                    info = info,
+                    error = "آدرس دانلود نامعتبر یا خارج از مخزن رسمی است"
+                )
+            )
             return
         }
         if (hasDownloadedUpdate(info.versionCode)) {
@@ -146,14 +233,17 @@ actual object PlatformUpdaterBridge {
             return
         }
 
-        bgScope.launch {
-            // Clean old update files
+        activeDownloadJob = bgScope.launch {
             updatesDir().listFiles()?.forEach { runCatching { it.delete() } }
-            val dest = File(updatesDir(), targetFileName(downloadUrl, info.versionName))
+            val finalFile = File(updatesDir(), targetFileName(downloadUrl, info.versionName))
+            val partFile = File(updatesDir(), "${finalFile.name}.part")
             var lastError: Exception? = null
 
             for (attempt in 1..2) {
                 try {
+                    val expectedSha256 = resolveExpectedSha256(info, downloadUrl)
+                    val digest = MessageDigest.getInstance("SHA-256")
+
                     val req = Request.Builder()
                         .url(downloadUrl)
                         .header("User-Agent", "ShiftKar-Desktop-Updater")
@@ -167,13 +257,14 @@ actual object PlatformUpdaterBridge {
                         var done = 0L
 
                         body.byteStream().use { input ->
-                            dest.outputStream().use { output ->
+                            partFile.outputStream().use { output ->
                                 val buf = ByteArray(16 * 1024)
                                 var lastReported = -1
                                 while (true) {
                                     val n = input.read(buf)
                                     if (n == -1) break
                                     output.write(buf, 0, n)
+                                    digest.update(buf, 0, n)
                                     done += n
                                     val percent = if (contentLength > 0) ((done * 100) / contentLength).toInt().coerceIn(0, 100) else 0
                                     if (percent != lastReported) {
@@ -189,6 +280,7 @@ actual object PlatformUpdaterBridge {
                                         )
                                     }
                                 }
+                                output.flush()
                             }
                         }
                         if (contentLength > 0 && done != contentLength) {
@@ -196,8 +288,22 @@ actual object PlatformUpdaterBridge {
                         }
                     }
 
-                    if (dest.name.endsWith(".AppImage", ignoreCase = true)) {
-                        runCatching { dest.setExecutable(true) }
+                    // Verify SHA-256 hash when present in update-desktop.json or GitHub Release .sha256
+                    val actualSha256 = digest.digest().joinToString("") { "%02x".format(it) }
+                    if (!expectedSha256.isNullOrBlank() && !actualSha256.equals(expectedSha256, ignoreCase = true)) {
+                        partFile.delete()
+                        throw SecurityException("خطای امنیتی: هش SHA-256 فایل دانلودشده با مقدار رسمی مطابقت ندارد!")
+                    }
+
+                    // Atomically promote .part -> finalFile
+                    Files.move(
+                        partFile.toPath(),
+                        finalFile.toPath(),
+                        StandardCopyOption.REPLACE_EXISTING
+                    )
+
+                    if (finalFile.name.endsWith(".AppImage", ignoreCase = true)) {
+                        runCatching { finalFile.setExecutable(true) }
                     }
                     writeAppStorageText(META_FILE, info.versionCode.toString())
                     onStateUpdate(
@@ -205,17 +311,21 @@ actual object PlatformUpdaterBridge {
                             status = UpdateState.Status.DOWNLOADED,
                             info = info,
                             progress = 100,
-                            downloadedBytes = dest.length(),
-                            totalBytes = dest.length()
+                            downloadedBytes = finalFile.length(),
+                            totalBytes = finalFile.length()
                         )
                     )
                     return@launch
                 } catch (ce: CancellationException) {
-                    dest.delete()
+                    partFile.delete()
                     throw ce
+                } catch (se: SecurityException) {
+                    partFile.delete()
+                    lastError = se
+                    break // Never retry a failed cryptographic hash check
                 } catch (e: Exception) {
                     lastError = e
-                    dest.delete()
+                    partFile.delete()
                     if (attempt < 2) delay(800)
                 }
             }
@@ -254,7 +364,6 @@ actual object PlatformUpdaterBridge {
                     } else {
                         ProcessBuilder("cmd", "/c", "start", "", path).start()
                     }
-                    // Exit current process after launching Windows installer so files are not locked
                     bgScope.launch {
                         delay(900)
                         kotlin.system.exitProcess(0)
@@ -266,11 +375,9 @@ actual object PlatformUpdaterBridge {
                 else -> {
                     if (path.endsWith(".AppImage", ignoreCase = true)) {
                         installer.setExecutable(true)
-                        // Open folder containing the new AppImage and launch it
                         runCatching { ProcessBuilder("xdg-open", installer.parentFile.absolutePath).start() }
                         ProcessBuilder(path).start()
                     } else {
-                        // Open .rpm or .deb in GNOME Software / KDE Discover, and also open folder as fallback
                         val launched = runCatching { ProcessBuilder("xdg-open", path).start() }.isSuccess
                         if (!launched && Desktop.isDesktopSupported()) {
                             Desktop.getDesktop().open(installer)
@@ -278,7 +385,6 @@ actual object PlatformUpdaterBridge {
                     }
                 }
             }
-            // Keep status as DOWNLOADED after launching installer so user can re-trigger if needed
             onStateUpdate(UpdateState(status = UpdateState.Status.DOWNLOADED, info = info, progress = 100))
         } catch (e: Exception) {
             runCatching {

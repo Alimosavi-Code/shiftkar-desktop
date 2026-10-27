@@ -86,7 +86,7 @@ fun UpdaterPopup(
 
     /* v2.2.9: بروزرسانی اجباری — پنجره بسته نمی‌شود (نه دکمهٔ بستن، نه
      * بیرون‌زدن، نه دکمهٔ بازگشت)؛ برنامه تا نصب از کار می‌افتد. */
-    val forced = state.info?.isForceUpdate == true
+    val forced = state.info?.isForceUpdate == true && state.status != UpdateState.Status.ERROR
 
 
     /* v2.2.3: پنجره هرگز «خالی» باز نمی‌شود — اگر وضعیت IDLE است (باز شدن دستی

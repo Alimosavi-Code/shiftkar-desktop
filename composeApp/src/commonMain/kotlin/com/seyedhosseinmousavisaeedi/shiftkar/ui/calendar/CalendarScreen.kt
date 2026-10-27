@@ -77,7 +77,7 @@ fun CalendarScreen(
     var offCount by remember { mutableIntStateOf(0) }
     var selectedKey by remember { mutableStateOf<String?>(null) }
 
-    val today = remember { todayJalaali() }
+    val today = rememberLiveToday()
     val todayKey = remember(today) { makeDateKey(today.jy, today.jm, today.jd) }
     val isCurrentMonth = s.viewYear == today.jy && s.viewMonth == today.jm
 
@@ -415,7 +415,7 @@ fun TitlePill(text: String, modifier: Modifier = Modifier, onClick: () -> Unit) 
 private fun TodayBanner(vm: AppViewModel, todayKey: String, onOpenDay: (String) -> Unit) {
     val s = vm.settings.collectAsState().value
     val sk = LocalSk.current
-    val today = remember { todayJalaali() }
+    val today = rememberLiveToday()
     val weekday = formatWeekday(today.jy, today.jm, today.jd)
     val dateLine = "$weekday ${toPersianDigits(today.jd)} ${JALALI_MONTHS[today.jm - 1]}"
     val effGroup = s.filterGroup.toShiftGroup()
@@ -469,7 +469,7 @@ private fun TodayBanner(vm: AppViewModel, todayKey: String, onOpenDay: (String) 
 @Composable
 private fun AllTodayBanner(todayKey: String, onOpenDay: (String) -> Unit) {
     val sk = LocalSk.current
-    val today = remember { todayJalaali() }
+    val today = rememberLiveToday()
     val weekday = formatWeekday(today.jy, today.jm, today.jd)
     val dateLine = "$weekday ${toPersianDigits(today.jd)} ${JALALI_MONTHS[today.jm - 1]}"
 

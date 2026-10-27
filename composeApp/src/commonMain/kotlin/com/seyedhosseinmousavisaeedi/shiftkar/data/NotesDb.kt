@@ -2,6 +2,7 @@ package com.seyedhosseinmousavisaeedi.shiftkar.data
 
 import com.seyedhosseinmousavisaeedi.shiftkar.platform.currentTimeMillis
 import com.seyedhosseinmousavisaeedi.shiftkar.platform.readAppStorageText
+import com.seyedhosseinmousavisaeedi.shiftkar.platform.recoverAppStorageBackup
 import com.seyedhosseinmousavisaeedi.shiftkar.platform.writeAppStorageText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -37,7 +38,13 @@ object NotesStore {
         return runCatching {
             json.decodeFromString(ListSerializer(NoteEntity.serializer()), raw)
                 .sortedByDescending { it.updatedAt }
-        }.getOrDefault(emptyList())
+        }.getOrElse {
+            val backupRaw = runCatching { recoverAppStorageBackup(FILE_NAME) }.getOrNull() ?: return emptyList()
+            runCatching {
+                json.decodeFromString(ListSerializer(NoteEntity.serializer()), backupRaw)
+                    .sortedByDescending { it.updatedAt }
+            }.getOrDefault(emptyList())
+        }
     }
 
     private fun saveToDisk(notes: List<NoteEntity>) {

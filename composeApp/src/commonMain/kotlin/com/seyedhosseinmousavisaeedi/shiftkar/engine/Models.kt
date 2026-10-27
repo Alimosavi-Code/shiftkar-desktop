@@ -155,6 +155,6 @@ object APP {
     /* v6.0.4 (مالک: «splash screen … looks ugly especially in dark mode» +
      * «bottom bar a bit more glassy»): اسپلش جدید — کارت گردگوشه با هالهٔ ملایم
      * روی پس‌زمینهٔ تیره؛ نوار پایین کمی شیشه‌ای‌تر (آلفای ۰٫۹۰) — 6.0.4 / versionCode 64 */
-    const val VERSION = "6.1.0"
+    const val VERSION = "6.2.0"
     const val TAGLINE = "تقویم هوشمند شیفت کاری"
 }
