@@ -1,9 +1,10 @@
 package com.seyedhosseinmousavisaeedi.shiftkar.ui.onboarding
 
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -11,26 +12,34 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathOperation
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.Canvas
-import androidx.compose.ui.graphics.drawscope.Stroke
 import com.seyedhosseinmousavisaeedi.shiftkar.engine.toPersianDigits
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.theme.IRANSansX
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.theme.LocalSk
 
 /**
- * Guided tour — 5-step spotlight tour (tour.tsx port).
- * The spotlight is a full-screen dim layer with a rounded-rect CUTOUT
- * (Path even-odd — the Compose equivalent of the box-shadow 200vmax trick),
- * and the tooltip is anchored right under/above the spotlight box.
- * Targets register their bounds via TourTarget modifiers.
+ * Guided tour — 5-step spotlight tour with exact local coordinate resolution.
+ * Uses `overlayCoords.localBoundingBoxOf(targetCoords, clipBounds = false)`
+ * (and root-offset translation fallback) so the spotlight cutout is 100% pixel-accurate
+ * regardless of top status bars, window resizing, or display scaling.
  */
 
 data class TourStep(
@@ -47,12 +56,14 @@ val TOUR_STEPS = listOf(
     TourStep("month-nav", "جابه‌جایی بین ماه‌ها", "با فلش‌ها ماه را عوض کنید، روی نام ماه بزنید تا مستقیم انتخاب کنید، یا روی صفحه بکشید. دکمهٔ یادداشت‌ها هم اینجاست.", TourStep.Placement.BELOW),
     TourStep("group-filter", "فیلتر گروه", "شیفت گروه خودتان را ببینید یا با «همه» وضعیت هر چهار گروه را مقایسه کنید.", TourStep.Placement.BELOW),
     TourStep("view-toggle", "دو نمای تقویم", "نمای «تقویم» مثل یک تقویم کلاسیک است؛ نمای «جدولی» شیفت هر چهار گروه را ردیف‌به‌ردیف نشان می‌دهد و حالت تمام‌صفحه هم دارد.", TourStep.Placement.BELOW),
-    TourStep("bottom-nav", "همه بخش‌ها اینجاست", "سامانه‌های شرکی، لوحه شیفت سالانه و تنظیمات شخصی‌سازی از این نوار در دسترس‌اند.", TourStep.Placement.ABOVE)
+    TourStep("bottom-nav", "همه بخش‌ها اینجاست", "سامانه‌های شرکتی، لوحه شیفت سالانه و تنظیمات شخصی‌سازی از این نوار در دسترس‌اند.", TourStep.Placement.ABOVE)
 )
 
-/** Registry: tour target key -> global bounds. */
+/** Registry: tour target key -> live LayoutCoordinates & root bounds. */
 object TourRegistry {
-    val bounds = androidx.compose.runtime.mutableStateMapOf<String, Rect>()
+    val coords = mutableStateMapOf<String, LayoutCoordinates>()
+    val bounds = mutableStateMapOf<String, Rect>()
+    var version by mutableIntStateOf(0)
 }
 
 @Composable
@@ -64,62 +75,128 @@ fun TourOverlay(
 ) {
     if (!active) return
     val sk = LocalSk.current
-    val step = TOUR_STEPS[stepIndex]
-    val box = TourRegistry.bounds[step.targetKey]
+    val density = LocalDensity.current
+    val step = TOUR_STEPS[stepIndex.coerceIn(0, TOUR_STEPS.lastIndex)]
 
-    /* چانهٔ آموزش هرگز نباید کاربر را گیر بیندازد: اگر هدف پیدا نشود یا کاربر
-     * جای خالی لمس کند، لمس = مرحلهٔ بعد (همان نقش دکمهٔ بعدی). */
+    var overlayCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    var overlayRootPos by remember { mutableStateOf(Offset.Zero) }
+    var tooltipHeightPx by remember { mutableFloatStateOf(with(density) { 195.dp.toPx() }) }
+
+    // Recompute local target bounds whenever step, window size, density, or target coordinates update
+    val registryVersion = TourRegistry.version
+    val targetCoords = TourRegistry.coords[step.targetKey]
+    val rawRootBounds = TourRegistry.bounds[step.targetKey]
+
+    val box: Rect? = remember(step.targetKey, registryVersion, overlayCoords, overlayRootPos, targetCoords, rawRootBounds) {
+        val ov = overlayCoords
+        val tc = targetCoords
+        if (ov != null && ov.isAttached && tc != null && tc.isAttached) {
+            runCatching { ov.localBoundingBoxOf(tc, clipBounds = false) }.getOrNull()
+        } else if (rawRootBounds != null) {
+            rawRootBounds.translate(-overlayRootPos.x, -overlayRootPos.y)
+        } else {
+            null
+        }
+    }
+
     BoxWithConstraints(
         Modifier
             .fillMaxSize()
+            .onGloballyPositioned { c ->
+                if (c.isAttached) {
+                    overlayCoords = c
+                    overlayRootPos = c.positionInRoot()
+                }
+            }
             .clickable(
-                interactionSource = androidx.compose.foundation.interaction.MutableInteractionSource(),
+                interactionSource = remember { MutableInteractionSource() },
                 indication = null
             ) { onNext() }
     ) {
-        /* spotlight: dim layer with cutout */
+        val padPx = with(density) { 6.dp.toPx() }
+        val radiusPx = with(density) { 18.dp.toPx() }
+        val strokePx = with(density) { 2.dp.toPx() }
+
+        /* spotlight: dim layer with exact local cutout + primary highlight ring */
         Canvas(Modifier.fillMaxSize()) {
-            val full = Path().apply { addRect(androidx.compose.ui.geometry.Rect(0f, 0f, size.width, size.height)) }
+            val full = Path().apply { addRect(Rect(0f, 0f, size.width, size.height)) }
             if (box != null) {
+                val left = (box.left - padPx).coerceAtLeast(2f)
+                val top = (box.top - padPx).coerceAtLeast(2f)
+                val right = (box.right + padPx).coerceAtMost(size.width - 2f)
+                val bottom = (box.bottom + padPx).coerceAtMost(size.height - 2f)
+
                 val hole = Path().apply {
                     addRoundRect(
-                        androidx.compose.ui.geometry.RoundRect(
-                            box.left - 10f, box.top - 10f, box.right + 10f, box.bottom + 10f,
-                            22f, 22f
+                        RoundRect(
+                            left = left,
+                            top = top,
+                            right = right,
+                            bottom = bottom,
+                            cornerRadius = CornerRadius(radiusPx, radiusPx)
                         )
                     )
                 }
                 val cut = Path().apply { op(full, hole, PathOperation.Difference) }
                 drawPath(cut, Color.Black.copy(alpha = 0.74f))
+
+                // Crisp highlight ring around the exact target
+                drawRoundRect(
+                    color = sk.primary.copy(alpha = 0.85f),
+                    topLeft = Offset(left, top),
+                    size = Size((right - left).coerceAtLeast(1f), (bottom - top).coerceAtLeast(1f)),
+                    cornerRadius = CornerRadius(radiusPx, radiusPx),
+                    style = Stroke(width = strokePx)
+                )
             } else {
                 drawRect(Color.Black.copy(alpha = 0.74f))
             }
         }
 
         if (box != null) {
-            val density = androidx.compose.ui.platform.LocalDensity.current
-            val gap = with(density) { 12.dp.toPx() }
-            val tooltipHeightEst = with(density) { 210.dp.toPx() }
+            val gap = with(density) { 14.dp.toPx() }
+            val marginPx = with(density) { 12.dp.toPx() }
             val screenH = with(density) { maxHeight.toPx() }.coerceAtLeast(1f)
 
-            val below = step.placement == TourStep.Placement.BELOW
-            val tooltipTop = if (below) {
-                minOf(box.bottom + gap, screenH - tooltipHeightEst)
+            // Automatically flip placement if there isn't enough vertical space on the preferred side
+            val preferBelow = step.placement == TourStep.Placement.BELOW
+            val spaceBelow = screenH - (box.bottom + padPx + gap)
+            val spaceAbove = (box.top - padPx - gap)
+            val placeBelow = if (preferBelow) {
+                spaceBelow >= tooltipHeightPx || spaceBelow >= spaceAbove
             } else {
-                maxOf(box.top - gap - tooltipHeightEst, 12f)
+                spaceAbove < tooltipHeightPx && spaceBelow > spaceAbove
             }
 
-            Column(
+            val tooltipTop = if (placeBelow) {
+                (box.bottom + padPx + gap).coerceIn(marginPx, (screenH - tooltipHeightPx - marginPx).coerceAtLeast(marginPx))
+            } else {
+                (box.top - padPx - gap - tooltipHeightPx).coerceIn(marginPx, (screenH - tooltipHeightPx - marginPx).coerceAtLeast(marginPx))
+            }
+
+            Box(
                 Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
-                    .offset { IntOffset(0, tooltipTop.toInt()) }
+                    .offset { IntOffset(0, tooltipTop.toInt()) },
+                contentAlignment = Alignment.TopCenter
             ) {
                 Column(
                     Modifier
+                        .widthIn(max = 520.dp)
                         .fillMaxWidth()
+                        .onGloballyPositioned { c ->
+                            if (c.size.height > 0) {
+                                tooltipHeightPx = c.size.height.toFloat()
+                            }
+                        }
                         .clip(RoundedCornerShape(24.dp))
                         .background(sk.sheetSolid)
+                        .border(1.dp, sk.border, RoundedCornerShape(24.dp))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) { /* consume clicks inside tooltip card */ }
                         .padding(20.dp)
                 ) {
                     Row(
@@ -139,6 +216,7 @@ fun TourOverlay(
                             "پایان آموزش",
                             Modifier
                                 .clip(RoundedCornerShape(8.dp))
+                                .pointerHoverIcon(PointerIcon.Hand)
                                 .clickableNoRippleCompat(onFinish)
                                 .padding(4.dp),
                             fontSize = 12.sp, fontFamily = IRANSansX, color = sk.textFaint
@@ -161,6 +239,7 @@ fun TourOverlay(
                             .height(44.dp)
                             .clip(RoundedCornerShape(16.dp))
                             .background(sk.primary)
+                            .pointerHoverIcon(PointerIcon.Hand)
                             .clickableNoRippleCompat(onNext),
                         contentAlignment = Alignment.Center
                     ) {
@@ -179,7 +258,7 @@ fun TourOverlay(
 private fun Modifier.clickableNoRippleCompat(onClick: () -> Unit): Modifier =
     this.then(
         Modifier.clickable(
-            interactionSource = androidx.compose.foundation.interaction.MutableInteractionSource(),
+            interactionSource = MutableInteractionSource(),
             indication = null,
             onClick = onClick
         )

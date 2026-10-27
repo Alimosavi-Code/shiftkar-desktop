@@ -228,35 +228,39 @@ fun CalendarScreen(
 
         /* ---- filter chips + fullscreen + today chip ---- */
         Row(
-            Modifier
-                .fillMaxWidth()
-                .tourTarget("group-filter"),
+            Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            GROUP_FILTERS.forEach { g ->
-                val active = s.filterGroup == g
-                val label = if (g == GroupFilter.ALL) "همه" else g.toShiftGroup().faLetter() // v2.2.4: حرف فارسی
-                val skChip = LocalSk.current
-                Box(
-                    Modifier
-                        .clip(RoundedCornerShape(100))
-                        .then(
-                            if (active) Modifier
-                                .background(skChip.surfaceStrong)
-                                .border(1.5.dp, skChip.primary, RoundedCornerShape(100))
-                            else Modifier.glass(RoundedCornerShape(100))
+            Row(
+                Modifier.tourTarget("group-filter"),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                GROUP_FILTERS.forEach { g ->
+                    val active = s.filterGroup == g
+                    val label = if (g == GroupFilter.ALL) "همه" else g.toShiftGroup().faLetter() // v2.2.4: حرف فارسی
+                    val skChip = LocalSk.current
+                    Box(
+                        Modifier
+                            .clip(RoundedCornerShape(100))
+                            .then(
+                                if (active) Modifier
+                                    .background(skChip.surfaceStrong)
+                                    .border(1.5.dp, skChip.primary, RoundedCornerShape(100))
+                                else Modifier.glass(RoundedCornerShape(100))
+                            )
+                            .clickableNoRipple { setFilter(g) }
+                            .padding(horizontal = 10.dp, vertical = 8.dp)
+                    ) {
+                        Text(
+                            label,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = IRANSansX,
+                            color = if (active) skChip.primary else skChip.textMuted
                         )
-                        .clickableNoRipple { setFilter(g) }
-                        .padding(horizontal = 10.dp, vertical = 8.dp)
-                ) {
-                    Text(
-                        label,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = IRANSansX,
-                        color = if (active) skChip.primary else skChip.textMuted
-                    )
+                    }
                 }
             }
             Spacer(Modifier.weight(1f))

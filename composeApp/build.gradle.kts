@@ -90,7 +90,7 @@ compose.desktop {
             }
             linux {
                 packageName = "shiftkar"
-                debMaintainer = "h.mosavi.s@gmail.com"
+                debMaintainer = "hamyarlearncomsite@gmail.com"
                 menuGroup = "Utility"
                 appCategory = "Utility"
                 shortcut = true
