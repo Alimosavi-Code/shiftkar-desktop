@@ -1,0 +1,29 @@
+# Gradle & Kotlin build outputs
+.gradle/
+build/
+**/build/
+out/
+dist/
+release-assets/
+
+# IDE & OS files
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Secrets, Keystores, Signing & Local Environment (NEVER commit to public repo)
+keystore/
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+*.key
+*.crt
+*.cer
+*.der
+local.properties
+*.secret*
+.env
+.env.*
