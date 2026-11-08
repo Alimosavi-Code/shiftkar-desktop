@@ -30,7 +30,7 @@ object IslamicCalendar {
 
     /* ---------------- official Iranian qamari table (1264–1449 AH) ---------------- */
 
-    val HIJRI_MONTH_BITS = intArrayOf(
+    val BASE_HIJRI_MONTH_BITS = intArrayOf(
         0b101010010111, // 1264
         0b101010101010, // 1265
         0b101011010101, // 1266
@@ -216,41 +216,131 @@ object IslamicCalendar {
         0b111011010001, // 1446
         0b011011101000, // 1447
         0b101011101010, // 1448
-        0b100101011100  // 1449
+        0b100101011101, // 1449
+        0b101010101101, // 1450
+        0b010101010110  // 1451
     )
 
     private const val SUPPORTED_START_JDN = 2396005L // 1 Muharram 1264 AH
     private const val SUPPORTED_START_YEAR = 1264
 
-    /** monthOffsets[m] = day offset (from 1 Muharram 1264) of month m (0-based). */
-    private val monthOffsets: IntArray = run {
-        val out = IntArray(HIJRI_MONTH_BITS.size * 12)
+    @Volatile
+    var HIJRI_MONTH_BITS: IntArray = BASE_HIJRI_MONTH_BITS.copyOf()
+        private set
+
+    @Volatile
+    private var monthOffsets: IntArray = buildMonthOffsets(HIJRI_MONTH_BITS)
+
+    @Volatile
+    private var jdnSupportEnd: Long = computeSupportEnd(HIJRI_MONTH_BITS, monthOffsets)
+
+    private fun buildMonthOffsets(bitsArr: IntArray): IntArray {
+        val out = IntArray(bitsArr.size * 12)
         var acc = 0
         for (m in out.indices) {
             out[m] = acc
-            val bits = HIJRI_MONTH_BITS[m / 12]
+            val bits = bitsArr[m / 12]
             acc += if ((bits shr (11 - (m % 12))) and 1 == 1) 30 else 29
         }
-        out
+        return out
     }
-    private val JDN_SUPPORT_END = monthOffsets.last() +
-        (if ((HIJRI_MONTH_BITS.last() shr 0) and 1 == 1) 30 else 29) + SUPPORTED_START_JDN
 
-    /** Official-table lookup. Returns -1 outside 1264–1449 AH. */
+    private fun computeSupportEnd(bitsArr: IntArray, offsets: IntArray): Long {
+        return offsets.last() +
+            (if ((bitsArr.last() shr 0) and 1 == 1) 30 else 29) + SUPPORTED_START_JDN
+    }
+
+    /**
+     * Rebuilds the Hijri month-length table with remote overrides from `calendar-sync.json`:
+     *  - `yearMonths`: 12-element list of (29 or 30) for any Hijri year (including 1450+)
+     *  - `monthLengths`: single-month override `"YYYY-MM" -> 29 or 30`
+     */
+    @Synchronized
+    fun rebuildWithOverrides(
+        yearMonths: Map<Int, List<Int>>,
+        monthLengths: Map<String, Int>
+    ) {
+        val maxBaseYear = SUPPORTED_START_YEAR + BASE_HIJRI_MONTH_BITS.size - 1
+        val maxOverrideYear = listOf(
+            yearMonths.keys.maxOrNull() ?: maxBaseYear,
+            monthLengths.keys.mapNotNull { it.substringBefore("-").toIntOrNull() }.maxOrNull() ?: maxBaseYear
+        ).maxOrNull() ?: maxBaseYear
+
+        val targetMaxYear = maxOf(maxBaseYear, maxOverrideYear.coerceAtMost(1550))
+        val totalYears = targetMaxYear - SUPPORTED_START_YEAR + 1
+        val nextBits = IntArray(totalYears) { idx ->
+            val hy = SUPPORTED_START_YEAR + idx
+            if (idx < BASE_HIJRI_MONTH_BITS.size) {
+                BASE_HIJRI_MONTH_BITS[idx]
+            } else {
+                // Default astronomical lengths for years beyond base table until overridden
+                var mask = 0
+                for (m in 1..12) {
+                    val nextJdn = if (m == 12) fallbackIslamicToJdn(hy + 1, 1, 1) else fallbackIslamicToJdn(hy, m + 1, 1)
+                    val len = (nextJdn - fallbackIslamicToJdn(hy, m, 1)).toInt()
+                    if (len >= 30) mask = mask or (1 shl (11 - (m - 1)))
+                }
+                mask
+            }
+        }
+
+        // 1. Apply full 12-month year overrides
+        for ((hy, lengths) in yearMonths) {
+            val yIdx = hy - SUPPORTED_START_YEAR
+            if (yIdx in nextBits.indices && lengths.size == 12) {
+                var mask = 0
+                for (mIdx in 0 until 12) {
+                    if (lengths[mIdx] >= 30) {
+                        mask = mask or (1 shl (11 - mIdx))
+                    }
+                }
+                nextBits[yIdx] = mask
+            }
+        }
+
+        // 2. Apply single-month length overrides ("1448-02" -> 30)
+        for ((ymKey, len) in monthLengths) {
+            val parts = ymKey.split("-")
+            if (parts.size == 2) {
+                val hy = parts[0].toIntOrNull() ?: continue
+                val hm = parts[1].toIntOrNull() ?: continue
+                val yIdx = hy - SUPPORTED_START_YEAR
+                if (yIdx in nextBits.indices && hm in 1..12) {
+                    val bitPos = 11 - (hm - 1)
+                    nextBits[yIdx] = if (len >= 30) {
+                        nextBits[yIdx] or (1 shl bitPos)
+                    } else {
+                        nextBits[yIdx] and (1 shl bitPos).inv()
+                    }
+                }
+            }
+        }
+
+        val nextOffsets = buildMonthOffsets(nextBits)
+        HIJRI_MONTH_BITS = nextBits
+        monthOffsets = nextOffsets
+        jdnSupportEnd = computeSupportEnd(nextBits, nextOffsets)
+    }
+
+    /** Official-table lookup. Returns -1 outside supported range. */
     fun toIranianIslamicJdn(hy: Int, hm: Int, hd: Int): Long {
+        val bitsArr = HIJRI_MONTH_BITS
+        val offsets = monthOffsets
         val yearIndex = hy - SUPPORTED_START_YEAR
-        if (yearIndex < 0 || yearIndex >= HIJRI_MONTH_BITS.size) return -1
-        return monthOffsets[yearIndex * 12 + hm - 1].toLong() + hd + SUPPORTED_START_JDN - 1
+        if (yearIndex < 0 || yearIndex >= bitsArr.size) return -1
+        return offsets[yearIndex * 12 + hm - 1].toLong() + hd + SUPPORTED_START_JDN - 1
     }
 
     fun fromIranianIslamicJdn(jdn: Long): HijriDate? {
-        if (jdn < SUPPORTED_START_JDN || jdn >= JDN_SUPPORT_END) return null
+        val offsets = monthOffsets
+        if (jdn < SUPPORTED_START_JDN || jdn >= jdnSupportEnd) return null
         val days = jdn - SUPPORTED_START_JDN
-        var index = (days / 30).toInt()
-        while (index + 1 < monthOffsets.size && monthOffsets[index + 1] <= days) index += 1
+        var index = (days / 30).toInt().coerceIn(0, offsets.lastIndex)
+        while (index > 0 && offsets[index] > days) index -= 1
+        while (index + 1 < offsets.size && offsets[index + 1] <= days) index += 1
         val yearIndex = index / 12
         val month = index % 12
-        val day = days - monthOffsets[index]
+        val day = days - offsets[index]
         return HijriDate(yearIndex + SUPPORTED_START_YEAR, month + 1, day.toInt() + 1)
     }
 
@@ -360,23 +450,33 @@ object IslamicCalendar {
         return HijriDate(year, month, hd)
     }
 
-    /* ---------------- unified API (table first, fallback second) ---------------- */
+    /* ---------------- unified API (table first, fallback second, + remote Estehlal offsets) ---------------- */
 
-    /** Hijri (hy, hm, hd) -> standard JDN. */
+    /** Hijri (hy, hm, hd) -> standard JDN (incorporating remote Estehlal month/global offsets). */
     fun islamicToJdn(hy: Int, hm: Int, hd: Int): Long {
         val table = toIranianIslamicJdn(hy, hm, hd)
-        return if (table != -1L) table else fallbackIslamicToJdn(hy, hm, hd)
+        val baseJdn = if (table != -1L) table else fallbackIslamicToJdn(hy, hm, hd)
+        val monthOff = CalendarSync.getMonthDayOffset(hy, hm)
+        val globalOff = CalendarSync.globalHijriDayOffset
+        return baseJdn + monthOff + globalOff
     }
 
-    /** Standard JDN -> Hijri. */
-    fun jdnToIslamic(jdn: Long): HijriDate =
-        fromIranianIslamicJdn(jdn) ?: fallbackIslamicFromJdn(jdn)
+    /** Standard JDN -> Hijri (incorporating remote Estehlal month/global offsets). */
+    fun jdnToIslamic(jdn: Long): HijriDate {
+        val globalOff = CalendarSync.globalHijriDayOffset
+        val baseLookup = fromIranianIslamicJdn(jdn - globalOff) ?: fallbackIslamicFromJdn(jdn - globalOff)
+        val monthOff = CalendarSync.getMonthDayOffset(baseLookup.hy, baseLookup.hm)
+        if (monthOff == 0) return baseLookup
+        val adjustedJdn = jdn - globalOff - monthOff
+        return fromIranianIslamicJdn(adjustedJdn) ?: fallbackIslamicFromJdn(adjustedJdn)
+    }
 
     /** Days in a Hijri month (table when available, else fallback). */
     fun islamicMonthLength(hy: Int, hm: Int): Int {
+        val bitsArr = HIJRI_MONTH_BITS
         val yearIndex = hy - SUPPORTED_START_YEAR
-        if (yearIndex >= 0 && yearIndex < HIJRI_MONTH_BITS.size) {
-            return if ((HIJRI_MONTH_BITS[yearIndex] shr (11 - (hm - 1))) and 1 == 1) 30 else 29
+        if (yearIndex >= 0 && yearIndex < bitsArr.size) {
+            return if ((bitsArr[yearIndex] shr (11 - (hm - 1))) and 1 == 1) 30 else 29
         }
         val next = if (hm == 12) islamicToJdn(hy + 1, 1, 1) else islamicToJdn(hy, hm + 1, 1)
         return (next - islamicToJdn(hy, hm, 1)).toInt()
@@ -387,13 +487,16 @@ object IslamicCalendar {
     private const val UNIX_EPOCH_JDN = 2440588L // JDN of 1970-01-01
 
     fun gregorianToJdn(gy: Int, gm: Int, gd: Int): Long =
-        g2d(gy.toLong(), gm.toLong(), gd.toLong())
+        java.time.LocalDate.of(gy, gm, gd).toEpochDay() + UNIX_EPOCH_JDN
 
-    fun jdnToGregorian(jdn: Long): Gregorian = d2g(jdn)
+    fun jdnToGregorian(jdn: Long): Gregorian {
+        val d = java.time.LocalDate.ofEpochDay(jdn - UNIX_EPOCH_JDN)
+        return Gregorian(d.year, d.monthValue, d.dayOfMonth)
+    }
 
     /** Weekday ordinal matching the persian-calendar library: 0 = Saturday …
      *  6 = Friday (JDN 2451545, a Saturday, → 0). */
-    fun weekDayOrdinal(jdn: Long): Long = floorModLong(jdn + 2L, 7L)
+    fun weekDayOrdinal(jdn: Long): Long = Math.floorMod(jdn + 2, 7).toLong()
 }
 
 /* Top-level convenience aliases (match the TS export names). */

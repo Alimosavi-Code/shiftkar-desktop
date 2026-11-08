@@ -1,14 +1,5 @@
 package com.seyedhosseinmousavisaeedi.shiftkar.ui.theme
 
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import com.seyedhosseinmousavisaeedi.shiftkar.platform.isSystemDarkMode
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
@@ -18,6 +9,11 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -26,6 +22,8 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import com.seyedhosseinmousavisaeedi.shiftkar.engine.ThemeId
 import com.seyedhosseinmousavisaeedi.shiftkar.engine.ThemeMode
+import com.seyedhosseinmousavisaeedi.shiftkar.platform.isSystemDarkMode
+import kotlinx.coroutines.delay
 
 @Immutable
 data class SkColors(val palette: SkPalette)
@@ -71,17 +69,21 @@ private fun Color.luminanceCompat(): Float {
 
 @Composable
 fun effectiveDark(mode: ThemeMode): Boolean {
-    if (mode == ThemeMode.DARK) return true
-    if (mode == ThemeMode.LIGHT) return false
     var sysDark by remember { mutableStateOf(isSystemDarkMode()) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            val detected = withContext(Dispatchers.Default) { isSystemDarkMode() }
-            if (detected != sysDark) sysDark = detected
-            delay(10_000)
+    LaunchedEffect(mode) {
+        if (mode == ThemeMode.SYSTEM) {
+            while (true) {
+                val probed = isSystemDarkMode()
+                if (probed != sysDark) sysDark = probed
+                delay(2_500L)
+            }
         }
     }
-    return sysDark
+    return when (mode) {
+        ThemeMode.DARK -> true
+        ThemeMode.LIGHT -> false
+        ThemeMode.SYSTEM -> sysDark
+    }
 }
 
 @Composable
@@ -98,7 +100,7 @@ fun ShiftKarTheme(
     ) {
         MaterialTheme(
             colorScheme = m3(palette),
-            typography = ShiftKarTypography,
+            typography = ShiftKarTypography(),
             content = content
         )
     }

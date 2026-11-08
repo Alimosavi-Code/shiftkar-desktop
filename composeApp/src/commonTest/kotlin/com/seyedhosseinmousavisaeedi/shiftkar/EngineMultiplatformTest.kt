@@ -41,9 +41,25 @@ class EngineMultiplatformTest {
     }
 
     @Test
-    fun shiftCodeIndex_numbers() {
+    fun tehranCalendar1405AnchorDates_areExact() {
+        // Verified against official Tehran University Institute of Geophysics Calendar 1405:
+        // 1 Farvardin 1405 = 1 Shawwal 1447 AH (Eid al-Fitr)
+        assertEquals(HijriDate(1447, 10, 1), toHijri(1405, 1, 1))
+        // 4 Tir 1405 = 9 Muharram 1448 AH (Tasua)
+        assertEquals(HijriDate(1448, 1, 9), toHijri(1405, 4, 4))
+        // 5 Tir 1405 = 10 Muharram 1448 AH (Ashura)
+        assertEquals(HijriDate(1448, 1, 10), toHijri(1405, 4, 5))
+        // 22 Bahman 1405 = 3 Ramadan 1448 AH
+        assertEquals(HijriDate(1448, 9, 3), toHijri(1405, 11, 22))
+        // 20 Esfand 1405 = 1 Shawwal 1448 AH (Eid al-Fitr)
+        assertEquals(HijriDate(1448, 10, 1), toHijri(1405, 12, 20))
+    }
+
+    @Test
+    fun shiftCodeIndex_andPresetsCount() {
         assertEquals(1, shiftCodeIndex(ShiftCode.M1))
         assertEquals(2, shiftCodeIndex(ShiftCode.M2))
+        assertEquals(1, shiftCodeIndex(ShiftCode.E1))
         assertEquals(1, shiftCodeIndex(ShiftCode.N1))
         assertEquals(2, shiftCodeIndex(ShiftCode.N2))
         assertEquals(1, shiftCodeIndex(ShiftCode.R1))
@@ -51,5 +67,7 @@ class EngineMultiplatformTest {
         assertEquals(3, shiftCodeIndex(ShiftCode.R3))
         assertEquals(4, shiftCodeIndex(ShiftCode.R4))
         assertTrue(GROUPS.size == 4)
+        assertTrue(ALL_GROUPS.size == 8)
+        assertTrue(ShiftEngine.PRESETS.size >= 45)
     }
 }

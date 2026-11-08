@@ -1,7 +1,5 @@
 package com.seyedhosseinmousavisaeedi.shiftkar.ui.components
 
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -13,34 +11,35 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.pointer.PointerIcon
-import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.seyedhosseinmousavisaeedi.shiftkar.engine.ShiftCode
 import com.seyedhosseinmousavisaeedi.shiftkar.engine.ShiftGroup
 import com.seyedhosseinmousavisaeedi.shiftkar.engine.ShiftKind
+import com.seyedhosseinmousavisaeedi.shiftkar.engine.codeToKind
 import com.seyedhosseinmousavisaeedi.shiftkar.engine.faLetter
+import com.seyedhosseinmousavisaeedi.shiftkar.engine.shiftCodeIndex
+import com.seyedhosseinmousavisaeedi.shiftkar.engine.toPersianDigits
+import com.seyedhosseinmousavisaeedi.shiftkar.ui.theme.IRANSansX
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.theme.LocalSk
 
 /**
- * Shared Frost UI atoms — glass surfaces, tiles, chips, badges,
- * segmented control, outlined option cards. Each modifier mirrors the
- * exact CSS recipe from globals.css.
+ * Shared Frost UI atoms (v6.5.3):
+ *  - Added 2-stop gradient brushes on `KindColors` so Morning (`صبح‌کار`) and
+ *    Evening (`عصرکار`) badges/cells have distinctly different gradients.
+ *  - Added `ShiftDayOrdinalBadge` (elegant mini shift icon + shift day number `۱`, `۲`, etc.)
+ *    for Calendar cells.
  */
 
-/** `.glass` — translucent gradient fill + border + specular top edge.
- * v2.2.4: optional `tint` draws OVER the gradient (note-yellow fields keep
- * their identity while turning glassy — «make it glassy like the rest»). */
 fun Modifier.glass(shape: RoundedCornerShape = RoundedCornerShape(16.dp), tint: Color? = null): Modifier = composed {
     val sk = LocalSk.current
     this
@@ -58,7 +57,6 @@ fun Modifier.glass(shape: RoundedCornerShape = RoundedCornerShape(16.dp), tint: 
         .border(1.dp, sk.border, shape)
 }
 
-/** `.card-soft` — same fill without any blur layer (large scrolling surfaces). */
 fun Modifier.cardSoft(shape: RoundedCornerShape = RoundedCornerShape(16.dp)): Modifier = composed {
     val sk = LocalSk.current
     this
@@ -75,7 +73,6 @@ fun Modifier.cardSoft(shape: RoundedCornerShape = RoundedCornerShape(16.dp)): Mo
         }
 }
 
-/** `.sk-tile` — frosted day cell (radial sheen at top + glass fill). */
 fun Modifier.skTile(shape: RoundedCornerShape = RoundedCornerShape(12.dp)): Modifier = composed {
     val sk = LocalSk.current
     this
@@ -93,7 +90,6 @@ fun Modifier.skTile(shape: RoundedCornerShape = RoundedCornerShape(12.dp)): Modi
         .border(1.dp, sk.border, shape)
 }
 
-/** `.sk-outline` — settings signature 2px outlined option card. */
 fun Modifier.skOutline(active: Boolean, shape: RoundedCornerShape = RoundedCornerShape(16.dp)): Modifier = composed {
     val sk = LocalSk.current
     this
@@ -102,7 +98,6 @@ fun Modifier.skOutline(active: Boolean, shape: RoundedCornerShape = RoundedCorne
         .border(2.dp, if (active) sk.primary else sk.borderSoft, shape)
 }
 
-/** Text gradient — `.text-gradient` (primary → glowB 55% → glowA). */
 @Composable
 fun GradientText(
     text: String,
@@ -120,13 +115,12 @@ fun GradientText(
         style = androidx.compose.ui.text.TextStyle(
             fontSize = fontSize.sp,
             fontWeight = fontWeight,
-            fontFamily = com.seyedhosseinmousavisaeedi.shiftkar.ui.theme.IRANSansX,
+            fontFamily = IRANSansX,
             brush = brush
         )
     )
 }
 
-/** `.sk-sheet-btn` — the shared 38–40dp icon button of the chrome rows. */
 @Composable
 fun SkIconButton(
     icon: ImageVector,
@@ -151,7 +145,6 @@ fun SkIconButton(
     }
 }
 
-/** `.sk-seg` segmented control (settings group picker) — v2.2.1: rounder pile. */
 @Composable
 fun SegmentedControl(
     options: List<String>,
@@ -188,7 +181,7 @@ fun SegmentedControl(
                     label,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
-                    fontFamily = com.seyedhosseinmousavisaeedi.shiftkar.ui.theme.IRANSansX,
+                    fontFamily = IRANSansX,
                     color = if (active) sk.primary else sk.textMuted
                 )
             }
@@ -196,7 +189,6 @@ fun SegmentedControl(
     }
 }
 
-/** `.sk-check-badge` — the 18dp circular check of outlined pickers. */
 @Composable
 fun CheckBadge(modifier: Modifier = Modifier) {
     val sk = LocalSk.current
@@ -211,92 +203,140 @@ fun CheckBadge(modifier: Modifier = Modifier) {
     }
 }
 
-/** Mini group badge — the Persian letter filled by that group's shift kind. */
+/** Mini group badge — the group letter filled by that group's shift kind gradient. */
 @Composable
 fun MiniBadge(group: ShiftGroup, kind: ShiftKind) {
-    val sk = LocalSk.current
-    val (bg, ink) = when (kind) {
-        ShiftKind.DAY -> sk.daySoft to sk.dayInk
-        ShiftKind.NIGHT -> sk.nightSoft to sk.nightInk
-        ShiftKind.REST -> sk.restSoft to sk.restInk
-    }
+    val kc = kindColors(kind)
     Box(
         Modifier
-            .size(13.dp)
+            .size(15.dp)
             .clip(RoundedCornerShape(5.dp))
-            .background(bg),
+            .background(kc.brush),
         contentAlignment = Alignment.Center
     ) {
         Text(
-            group.faLetter(), // v2.2.4: حرف فارسی
+            group.faLetter(),
             fontSize = 8.sp,
             fontWeight = FontWeight.Black,
             lineHeight = 8.sp,
-            fontFamily = com.seyedhosseinmousavisaeedi.shiftkar.ui.theme.IRANSansX,
-            color = ink,
+            fontFamily = IRANSansX,
+            color = kc.ink,
             textAlign = TextAlign.Center
         )
     }
 }
 
 /**
- * نشان گروه در سلول‌های نمای «همهٔ گروه‌ها» — v2.2.4: حرف فارسی (آ/ب/ج/د)
- * با رنگ وضعیت شیفت آن گروه (مالک: «Instead of group a wrote شیفت آ»). چیدمان ۲×۲ داخل سلول دست‌نخورده.
+ * نشان گروه + شماره روز نوبت در سلول‌های نمای «همهٔ گروه‌ها» (مثلاً A۱، B۲)
  */
 @Composable
-fun GroupNumBadge(group: ShiftGroup, code: com.seyedhosseinmousavisaeedi.shiftkar.engine.ShiftCode) {
-    val sk = LocalSk.current
-    val kind = com.seyedhosseinmousavisaeedi.shiftkar.engine.codeToKind(code)
-    val (bg, ink) = when (kind) {
-        ShiftKind.DAY -> sk.daySoft to sk.dayInk
-        ShiftKind.NIGHT -> sk.nightSoft to sk.nightInk
-        ShiftKind.REST -> sk.restSoft to sk.restInk
-    }
+fun GroupNumBadge(group: ShiftGroup, code: ShiftCode) {
+    val kind = codeToKind(code)
+    val kc = kindColors(kind)
+    val ord = toPersianDigits(shiftCodeIndex(code))
     Box(
         Modifier
-            .size(width = 17.dp, height = 13.dp)
+            .size(width = 19.dp, height = 13.dp)
             .clip(RoundedCornerShape(5.dp))
-            .background(bg),
+            .background(kc.brush),
         contentAlignment = Alignment.Center
     ) {
         Text(
-            group.faLetter(), // v2.2.4: حرف فارسی
-            fontSize = 8.5.sp,
+            "${group.faLetter()}$ord",
+            fontSize = 7.5.sp,
             fontWeight = FontWeight.Black,
-            lineHeight = 8.5.sp,
-            fontFamily = com.seyedhosseinmousavisaeedi.shiftkar.ui.theme.IRANSansX,
-            color = ink,
-            textAlign = TextAlign.Center
+            lineHeight = 8.sp,
+            fontFamily = IRANSansX,
+            color = kc.ink,
+            textAlign = TextAlign.Center,
+            maxLines = 1
         )
     }
 }
 
-/** Kind chip colors — DAY/NIGHT/REST soft+ink pairs. */
-data class KindColors(val bg: Color, val ink: Color)
+/**
+ * Elegant mini icon + shift ordinal badge for Calendar cells (e.g., [☀️ ۱], [🌇 ۲], [🌙 ۱], [🛋️ ۴]):
+ * Displays the vector shift icon alongside the Persian day number of that shift phase.
+ */
+@Composable
+fun ShiftDayOrdinalBadge(
+    kind: ShiftKind,
+    ordinal: Int,
+    isSwapped: Boolean = false
+) {
+    val kc = kindColors(kind)
+    val numText = if (isSwapped) "*" else toPersianDigits(ordinal)
+    Row(
+        Modifier
+            .height(19.dp)
+            .clip(RoundedCornerShape(7.dp))
+            .background(kc.brush)
+            .border(0.8.dp, kc.ink.copy(alpha = 0.35f), RoundedCornerShape(7.dp))
+            .padding(horizontal = 4.5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        Icon(kindIcon(kind, 11), null, Modifier.size(11.dp), tint = kc.ink)
+        Text(
+            numText,
+            fontSize = 9.sp,
+            lineHeight = 9.5.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = IRANSansX,
+            color = kc.ink
+        )
+    }
+}
+
+data class KindColors(
+    val bg: Color,
+    val bgEnd: Color,
+    val ink: Color,
+    val brush: Brush
+)
 
 @Composable
 fun kindColors(kind: ShiftKind): KindColors {
     val sk = LocalSk.current
     return when (kind) {
-        ShiftKind.DAY -> KindColors(sk.daySoft, sk.dayInk)
-        ShiftKind.NIGHT -> KindColors(sk.nightSoft, sk.nightInk)
-        ShiftKind.REST -> KindColors(sk.restSoft, sk.restInk)
+        ShiftKind.DAY -> KindColors(
+            bg = sk.daySoft,
+            bgEnd = sk.daySoftEnd,
+            ink = sk.dayInk,
+            brush = Brush.linearGradient(listOf(sk.daySoft, sk.daySoftEnd))
+        )
+        ShiftKind.EVENING -> KindColors(
+            bg = sk.eveningSoft,
+            bgEnd = sk.eveningSoftEnd,
+            ink = sk.eveningInk,
+            brush = Brush.linearGradient(listOf(sk.eveningSoft, sk.eveningSoftEnd))
+        )
+        ShiftKind.NIGHT -> KindColors(
+            bg = sk.nightSoft,
+            bgEnd = sk.nightSoftEnd,
+            ink = sk.nightInk,
+            brush = Brush.linearGradient(listOf(sk.nightSoft, sk.nightSoftEnd))
+        )
+        ShiftKind.REST -> KindColors(
+            bg = sk.restSoft,
+            bgEnd = sk.restSoftEnd,
+            ink = sk.restInk,
+            brush = Brush.linearGradient(listOf(sk.restSoft, sk.restSoftEnd))
+        )
     }
 }
 
 @Composable
 fun kindIcon(kind: ShiftKind, size: Int = 16): ImageVector = when (kind) {
     ShiftKind.DAY -> SkIcons.Sun
+    ShiftKind.EVENING -> SkIcons.Sunset
     ShiftKind.NIGHT -> SkIcons.Moon
     ShiftKind.REST -> SkIcons.Rest
 }
 
-/** Clickable without ripple (the PWA's tap-highlight-free feel). */
 fun Modifier.clickableNoRipple(enabled: Boolean = true, onClick: () -> Unit): Modifier = composed {
     val interaction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     this.then(
-        if (enabled) Modifier.pointerHoverIcon(PointerIcon.Hand) else Modifier
-    ).then(
         Modifier.clickable(
             interactionSource = interaction,
             indication = null,
@@ -304,22 +344,4 @@ fun Modifier.clickableNoRipple(enabled: Boolean = true, onClick: () -> Unit): Mo
             onClick = onClick
         )
     )
-}
-
-/**
- * Live Jalali date state that automatically refreshes across midnight so long-running
- * desktop windows never freeze on yesterday's date/shift.
- */
-@Composable
-fun rememberLiveToday(): com.seyedhosseinmousavisaeedi.shiftkar.engine.JalaliDate {
-    val state = androidx.compose.runtime.produceState(
-        initialValue = com.seyedhosseinmousavisaeedi.shiftkar.engine.todayJalaali()
-    ) {
-        while (true) {
-            kotlinx.coroutines.delay(30_000L)
-            val now = com.seyedhosseinmousavisaeedi.shiftkar.engine.todayJalaali()
-            if (now != value) value = now
-        }
-    }
-    return state.value
 }

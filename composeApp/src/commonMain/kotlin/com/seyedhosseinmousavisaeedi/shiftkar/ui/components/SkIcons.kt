@@ -43,12 +43,22 @@ object SkIcons {
         "Sun", "M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4",
         "M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z"
     )
+    val Sunset = strokeIcon(
+        "Sunset",
+        "M12 10V2",
+        "M4.93 10.93l1.41 1.41",
+        "M2 18h2",
+        "M20 18h2",
+        "M19.07 10.93l-1.41 1.41",
+        "M22 22H2",
+        "M16 18a4 4 0 0 0-8 0"
+    )
     val Moon = strokeIcon("Moon", "M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z")
     val Rest = strokeIcon(
         "Rest",
-        "M3 18v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5",
-        "M3 18h18",
-        "M6 11V8a2 2 0 0 1 2-2h2"
+        "M3 10.5L12 3l9 7.5",
+        "M5.5 9.5V19a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V9.5",
+        "M9.5 21v-5.5a2.5 2.5 0 0 1 5 0V21"
     )
 
     /* ---------- navigation / chrome ---------- */
@@ -94,6 +104,20 @@ object SkIcons {
         "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"
     )
     val Download = strokeIcon("Download", "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "M7 10l5 5 5-5", "M12 15V3")
+    val Share = strokeIcon(
+        "Share",
+        "M18 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z",
+        "M6 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z",
+        "M18 22a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z",
+        "M8.59 13.51l6.83 3.98",
+        "M15.41 6.51l-6.82 3.98"
+    )
+    val Image = strokeIcon(
+        "Image",
+        "M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z",
+        "M9 10a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z",
+        "M21 15l-5-5L5 21"
+    )
     val Search = strokeIcon("Search", "M19 11a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z", "M21 21l-4.3-4.3")
     val ZoomIn = strokeIcon("ZoomIn", "M19 11a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z", "M21 21l-4.3-4.3", "M11 8v6M8 11h6")
     val Close = strokeIcon("Close", "M18 6 6 18M6 6l12 12")
@@ -115,6 +139,11 @@ object SkIcons {
         "M16 3.13a4 4 0 0 1 0 7.75"
     )
     val Info = strokeIcon("Info", "M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0Z", "M12 16v-4M12 8h.01")
+    val Edit = strokeIcon(
+        "Edit",
+        "M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z",
+        "M15 5l4 4"
+    )
     val Trash = strokeIcon("Trash", "M3 6h18", "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6", "M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2", "M10 11v6M14 11v6")
     val Phone = strokeIcon(
         "Phone",

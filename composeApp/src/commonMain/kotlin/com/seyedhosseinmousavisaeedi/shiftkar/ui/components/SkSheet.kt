@@ -18,6 +18,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -84,6 +85,7 @@ fun SkSheet(
     title: String,
     modifier: Modifier = Modifier,
     expandable: Boolean = true,
+    bodyScroll: ScrollState = rememberScrollState(),
     content: @Composable ColumnScope.() -> Unit
 ) {
     /* ---- alive-linger: stay composed through the exit animation ---- */
@@ -105,6 +107,8 @@ fun SkSheet(
 
     val sk = LocalSk.current
     val density = LocalDensity.current
+    val screenH = 820
+    val collapsedH = (screenH * 0.86f).dp
 
     /* v2.2.5 (مالک: «Make it that the background numbers and words are not
      * visible at all! And make a gradient for it like the home screen!»):
@@ -118,6 +122,7 @@ fun SkSheet(
         animationSpec = tween(260, easing = SheetEnterEase),
         label = "sheetFs"
     )
+    val maxH = collapsedH + ((screenH.dp - collapsedH) * fsP)
     val radiusDp = 26f * (1f - fsP)
 
     /* ---- keyboard open → fullscreen (owner request) ---- */
@@ -131,7 +136,6 @@ fun SkSheet(
     val drag = remember { Animatable(0f) }
 
     /* ---- body scroll state — scroll-to-end expands (PWA onBodyScroll) ---- */
-    val bodyScroll = rememberScrollState()
     LaunchedEffect(expandable) {
         snapshotFlow { bodyScroll.value to bodyScroll.maxValue }
             .collect { (v, max) ->
@@ -141,13 +145,13 @@ fun SkSheet(
             }
     }
 
+    /* ---- back button: fullscreen → minimize, peek → dismiss ---- */
+
+
     /* مرزهای فعلی شیت — برای تشخیص هندسی «ضربهٔ بیرون» */
     var sheetBounds by remember { mutableStateOf(Rect.Zero) }
 
-    BoxWithConstraints(Modifier.fillMaxSize()) {
-        val screenH = maxHeight.value
-        val collapsedH = (screenH * 0.86f).dp
-        val maxH = collapsedH + ((screenH.dp - collapsedH) * fsP)
+    Box(Modifier.fillMaxSize()) {
         /* ---- backdrop (dismiss area) — cross-fades with open/close ----
          * 0x9E081024 ≈ rgba(8,16,36,0.62): the PWA overlays rgba(8,12,26,0.45)
          * PLUS backdrop-blur(7px); without blur the extra opacity reproduces the
@@ -187,7 +191,6 @@ fun SkSheet(
             ) {
                 Column(
                     modifier
-                        .widthIn(max = if (fullscreen) 920.dp else 640.dp)
                         .fillMaxWidth()
                         .onGloballyPositioned { sheetBounds = it.boundsInRoot() }
                         .heightIn(min = maxH * fsP, max = maxH)
@@ -308,13 +311,9 @@ fun SkSheet(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
-                        if (expandable) {
-                            SheetButton(
-                                icon = if (fullscreen) SkIcons.Collapse else SkIcons.Expand,
-                                desc = if (fullscreen) "کوچک‌نمایی" else "تمام‌صفحه"
-                            ) { fullscreen = !fullscreen }
+                        if (fullscreen) {
+                            SheetButton(icon = SkIcons.Close, desc = "بستن") { onDismiss() }
                         }
-                        SheetButton(icon = SkIcons.Close, desc = "بستن") { onDismiss() }
                     }
 
                     // body

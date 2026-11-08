@@ -1,29 +1,19 @@
 package com.seyedhosseinmousavisaeedi.shiftkar.engine
 
-import kotlinx.datetime.Clock
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.todayIn
-import kotlin.math.floor
-
 /**
- * Jalali (Persian) calendar — 100% pure Kotlin Multiplatform port of the PWA's
- * `src/lib/jalali.ts` (standard jalaali-js algorithm).
- * Zero JVM/Android dependencies — runs natively on Android, iOS, and Desktop.
+ * Jalali (Persian) calendar — faithful Kotlin port of the PWA's
+ * `src/lib/jalali.ts`, itself a port of the standard jalaali-js algorithm.
+ * Pure conversion & formatting logic, no Android dependencies.
+ *
+ * Original ShiftKar engine notes preserved:
+ *  - BREAKS: 33-year cycle table
+ *  - Persian week: 0 = شنبه (Saturday) … 6 = جمعه (Friday)
  */
 
-private fun div(a: Long, b: Long): Long = a / b
+/* ---------------- low-level helpers ---------------- */
 
-private fun floorDivLong(a: Long, b: Long): Long {
-    var r = a / b
-    if ((a xor b) < 0L && (r * b != a)) {
-        r -= 1L
-    }
-    return r
-}
-
-private fun mod(a: Long, b: Long): Long = a - b * floorDivLong(a, b)
-
-internal fun floorModLong(a: Long, b: Long): Long = ((a % b) + b) % b
+private fun div(a: Long, b: Long): Long = a / b          // JS Math.trunc semantics
+private fun mod(a: Long, b: Long): Long = a - b * Math.floorDiv(a, b)
 
 private val BREAKS = longArrayOf(
     -61, 9, 38, 199, 426, 686, 756, 818, 1111, 1181, 1210, 1635, 2060,
@@ -70,15 +60,17 @@ private fun jalCal(jy: Int): JalCalResult {
 }
 
 /** Gregorian (gy, gm, gd) -> Julian Day Number (standard JDN, 2000-01-01 = 2451545). */
-internal fun g2d(gy: Long, gm: Long, gd: Long): Long {
+private fun g2d(gy: Long, gm: Long, gd: Long): Long {
     var d = div((gy + div(gm - 8, 6) + 100100) * 1461, 4) +
         div(153 * mod(gm + 9, 12) + 2, 5) + gd - 34840408
+    /* NOTE: must be `d - X + 752` (NOT `d -= X + 752`) — the TS source is
+       `d = d - div(...) + 752`. */
     d = d - div(div(gy + 100100 + div(gm - 8, 6), 100) * 3, 4) + 752
     return d
 }
 
 /** JDN -> Gregorian. */
-internal fun d2g(jdn: Long): Gregorian {
+private fun d2g(jdn: Long): Gregorian {
     var j = 4 * jdn + 139361631
     j += div(div(4 * jdn + 183187720, 146097) * 3, 4) * 4 - 3908
     val i = div(mod(j, 1461), 4) * 5 + 308
@@ -99,14 +91,14 @@ private fun d2j(jdn: Long): JalaliDate {
     val r = jalCal(jy)
     val jdn1f = g2d(r.gy, 3, r.march.toLong())
     var k = jdn - jdn1f
-    val jm: Int
-    val jd: Int
+    var jm: Int
+    var jd: Int
 
     if (k >= 0) {
         if (k <= 185) {
             jm = (1 + div(k, 31)).toInt()
             jd = (mod(k, 31) + 1).toInt()
-            return JalaliDate(jy, jm, jd)
+            return JalaliDate(jy.toInt(), jm, jd)
         }
         k -= 186
     } else {
@@ -116,7 +108,7 @@ private fun d2j(jdn: Long): JalaliDate {
     }
     jm = (7 + div(k, 30)).toInt()
     jd = (mod(k, 30) + 1).toInt()
-    return JalaliDate(jy, jm, jd)
+    return JalaliDate(jy.toInt(), jm, jd)
 }
 
 /* ---------------- public API ---------------- */
@@ -146,10 +138,10 @@ fun jalaaliMonthLength(jy: Int, jm: Int): Int {
 
 /**
  * Persian week index: 0 = شنبه (Saturday) … 6 = جمعه (Friday).
- * JDN 2451545 (2000-01-01) is Saturday -> floorMod(jdn + 2, 7) == 0.
+ * Ported exactly: JS getUTCDay (0=Sun..6=Sat) mapped by (jsDay + 1) % 7.
  */
 fun jalaaliWeekday(jy: Int, jm: Int, jd: Int): Int =
-    floorModLong(j2d(jy, jm, jd) + 2L, 7L).toInt()
+    Math.floorMod(j2d(jy, jm, jd) + 2, 7).toInt()
 
 /* ---------------- names & formatting ---------------- */
 
@@ -172,8 +164,15 @@ val HIJRI_MONTHS = arrayOf(
 
 private const val FA_DIGITS = "۰۱۲۳۴۵۶۷۸۹"
 
-fun toPersianDigits(value: Any?): String =
-    value.toString().map { c -> if (c in '0'..'9') FA_DIGITS[c - '0'] else c }.joinToString("")
+fun toPersianDigits(value: Any?): String {
+    val s = value.toString()
+    val sb = StringBuilder(s.length)
+    for (i in 0 until s.length) {
+        val c = s[i]
+        sb.append(if (c in '0'..'9') FA_DIGITS[c - '0'] else c)
+    }
+    return sb.toString()
+}
 
 fun pad2(n: Int): String = n.toString().padStart(2, '0')
 
@@ -181,6 +180,15 @@ fun pad2(n: Int): String = n.toString().padStart(2, '0')
 fun makeDateKey(jy: Int, jm: Int, jd: Int): String = "$jy-${pad2(jm)}-${pad2(jd)}"
 
 fun parseDateKey(key: String): JalaliDate {
+    val d1 = key.indexOf('-')
+    val d2 = if (d1 >= 0) key.indexOf('-', d1 + 1) else -1
+    if (d1 > 0 && d2 > d1) {
+        return JalaliDate(
+            key.substring(0, d1).toInt(),
+            key.substring(d1 + 1, d2).toInt(),
+            key.substring(d2 + 1).toInt()
+        )
+    }
     val p = key.split("-").map { it.toInt() }
     return JalaliDate(p[0], p[1], p[2])
 }
@@ -194,6 +202,6 @@ fun formatGregorian(gy: Int, gm: Int, gd: Int): String =
 fun formatWeekday(jy: Int, jm: Int, jd: Int): String = WEEKDAYS[jalaaliWeekday(jy, jm, jd)]
 
 fun todayJalaali(): JalaliDate {
-    val now = Clock.System.todayIn(TimeZone.currentSystemDefault())
-    return toJalaali(now.year, now.monthNumber, now.dayOfMonth)
+    val now = java.time.LocalDate.now()
+    return toJalaali(now.year, now.monthValue, now.dayOfMonth)
 }

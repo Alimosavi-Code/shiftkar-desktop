@@ -19,8 +19,12 @@ import java.awt.FileDialog
 import java.awt.Frame
 import java.awt.RenderingHints
 import java.awt.Toolkit
+import java.awt.datatransfer.DataFlavor
 import java.awt.datatransfer.StringSelection
+import java.awt.datatransfer.Transferable
+import java.awt.datatransfer.UnsupportedFlavorException
 import java.awt.image.BufferedImage
+import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.net.URI
@@ -49,6 +53,12 @@ private var cachedSystemDark: Boolean = false
 
 @Volatile
 private var lastDarkProbeAt: Long = 0L
+
+@Volatile
+private var cachedAccentRgb: Long? = null
+
+@Volatile
+private var lastAccentProbeAt: Long = 0L
 
 /**
  * Probes OS dark mode on a background thread (never blocks startup UI thread).
@@ -101,6 +111,83 @@ private fun probeSystemDarkModeBlocking(): Boolean {
     }
 }
 
+/**
+ * Probes OS system accent color (`0xRRGGBB`) on Windows 10/11, macOS, KDE Plasma, and GNOME.
+ */
+private fun probeSystemAccentColorBlocking(): Long? {
+    val os = System.getProperty("os.name")?.lowercase().orEmpty()
+    return when {
+        os.contains("win") -> {
+            // Windows DWM AccentColor is stored as 0xAABBGGRR in HKCU\Software\Microsoft\Windows\DWM
+            val dwmAccent = execCommandOutput(
+                "reg", "query",
+                "HKCU\\Software\\Microsoft\\Windows\\DWM",
+                "/v", "AccentColor"
+            )
+            val hexMatch = dwmAccent?.let { Regex("0x([0-9a-fA-F]{6,8})").find(it) }?.groupValues?.getOrNull(1)
+            if (hexMatch != null) {
+                val raw = hexMatch.toLongOrNull(16)
+                if (raw != null) {
+                    val r = raw and 0xFFL
+                    val g = (raw shr 8) and 0xFFL
+                    val b = (raw shr 16) and 0xFFL
+                    return (r shl 16) or (g shl 8) or b
+                }
+            }
+            val dwmColorization = execCommandOutput(
+                "reg", "query",
+                "HKCU\\Software\\Microsoft\\Windows\\DWM",
+                "/v", "ColorizationColor"
+            )
+            val colMatch = dwmColorization?.let { Regex("0x([0-9a-fA-F]{6,8})").find(it) }?.groupValues?.getOrNull(1)
+            colMatch?.toLongOrNull(16)?.let { it and 0xFFFFFFL }
+        }
+        os.contains("linux") -> {
+            // 1. Check KDE Plasma ~/.config/kdeglobals AccentColor=R,G,B
+            val kdeGlobals = File(System.getProperty("user.home", "."), ".config/kdeglobals")
+            if (kdeGlobals.exists()) {
+                val lines = runCatching { kdeGlobals.readLines() }.getOrDefault(emptyList())
+                val accentLine = lines.firstOrNull { it.trim().startsWith("AccentColor=", ignoreCase = true) }
+                if (accentLine != null) {
+                    val parts = accentLine.substringAfter("=").split(",").mapNotNull { it.trim().toIntOrNull() }
+                    if (parts.size >= 3) {
+                        val r = parts[0].coerceIn(0, 255).toLong()
+                        val g = parts[1].coerceIn(0, 255).toLong()
+                        val b = parts[2].coerceIn(0, 255).toLong()
+                        return (r shl 16) or (g shl 8) or b
+                    }
+                }
+            }
+            // 2. Check GNOME / Ubuntu accent-color
+            val gnomeAccent = execCommandOutput("gsettings", "get", "org.gnome.desktop.interface", "accent-color")?.lowercase()
+            when {
+                gnomeAccent == null -> null
+                gnomeAccent.contains("teal") -> 0x0EA5A0L
+                gnomeAccent.contains("green") -> 0x0F9D72L
+                gnomeAccent.contains("orange") -> 0xF46B16L
+                gnomeAccent.contains("red") || gnomeAccent.contains("pink") -> 0xF43F5EL
+                gnomeAccent.contains("purple") -> 0x8B5CF6L
+                gnomeAccent.contains("yellow") -> 0xEAB308L
+                gnomeAccent.contains("blue") -> 0x3D6BF5L
+                else -> null
+            }
+        }
+        os.contains("mac") -> {
+            val macAccent = execCommandOutput("defaults", "read", "-g", "AppleAccentColor")?.trim()
+            when (macAccent) {
+                "0" -> 0xF43F5EL // Red
+                "1" -> 0xF46B16L // Orange
+                "2" -> 0xEAB308L // Yellow
+                "3" -> 0x0F9D72L // Green
+                "5" -> 0x8B5CF6L // Purple
+                "6" -> 0xEC4899L // Pink
+                else -> 0x3D6BF5L // Blue (4 or default)
+            }
+        }
+        else -> null
+    }
+}
+
 actual fun isSystemDarkMode(): Boolean {
     val now = System.currentTimeMillis()
     if (lastDarkProbeAt == 0L) {
@@ -112,9 +199,27 @@ actual fun isSystemDarkMode(): Boolean {
     }
     if (now - lastDarkProbeAt >= 8_000L) {
         lastDarkProbeAt = now
-        cachedSystemDark = runCatching { probeSystemDarkModeBlocking() }.getOrDefault(cachedSystemDark)
+        Thread({
+            cachedSystemDark = runCatching { probeSystemDarkModeBlocking() }.getOrDefault(cachedSystemDark)
+        }, "shiftkar-theme-poll").apply { isDaemon = true; start() }
     }
     return cachedSystemDark
+}
+
+actual fun getSystemAccentColorRgb(): Long? {
+    val now = System.currentTimeMillis()
+    if (lastAccentProbeAt == 0L) {
+        lastAccentProbeAt = now
+        cachedAccentRgb = runCatching { probeSystemAccentColorBlocking() }.getOrNull()
+        return cachedAccentRgb
+    }
+    if (now - lastAccentProbeAt >= 12_000L) {
+        lastAccentProbeAt = now
+        Thread({
+            cachedAccentRgb = runCatching { probeSystemAccentColorBlocking() }.getOrDefault(cachedAccentRgb)
+        }, "shiftkar-accent-poll").apply { isDaemon = true; start() }
+    }
+    return cachedAccentRgb
 }
 
 private fun desktopStorageDir(): File {
@@ -143,9 +248,6 @@ actual fun readAppStorageText(name: String): String? {
     return null
 }
 
-/**
- * If a primary storage file fails JSON parsing, moves it to `.corrupt` and returns `.bak` content if available.
- */
 actual fun recoverAppStorageBackup(name: String): String? {
     val dir = desktopStorageDir()
     val file = File(dir, name)
@@ -164,10 +266,6 @@ actual fun recoverAppStorageBackup(name: String): String? {
     } else null
 }
 
-/**
- * Atomic file write: writes to `<name>.tmp`, flushes descriptor to disk, copies previous valid
- * file to `<name>.bak`, and atomically renames `<name>.tmp` -> `<name>`.
- */
 actual fun writeAppStorageText(name: String, content: String) {
     runCatching {
         val dir = desktopStorageDir()
@@ -204,7 +302,7 @@ actual fun writeAppStorageText(name: String, content: String) {
     }
 }
 
-private fun readResourceBytes(path: String): ByteArray {
+fun readDesktopResourceBytes(path: String): ByteArray {
     val clean = path.removePrefix("/")
     val stream = Thread.currentThread().contextClassLoader?.getResourceAsStream(clean)
         ?: PlatformTarget::class.java.classLoader?.getResourceAsStream(clean)
@@ -213,7 +311,7 @@ private fun readResourceBytes(path: String): ByteArray {
 }
 
 actual fun readBundledEventsJson(): String =
-    readResourceBytes("files/events.json").decodeToString()
+    readDesktopResourceBytes("files/events.json").decodeToString()
 
 private val cachedFontFamily: FontFamily by lazy {
     FontFamily(
@@ -228,16 +326,22 @@ private val cachedFontFamily: FontFamily by lazy {
 
 actual fun loadBundledFontFamily(): FontFamily = cachedFontFamily
 
+actual fun loadBundledFontBytes(fileName: String): ByteArray =
+    readDesktopResourceBytes("font/$fileName")
+
+actual fun decodePngToImageBitmap(pngBytes: ByteArray): ImageBitmap =
+    Image.makeFromEncoded(pngBytes).toComposeImageBitmap()
+
 private val cachedNoiseBitmap: ImageBitmap? by lazy {
     runCatching {
-        Image.makeFromEncoded(readResourceBytes("drawable/noise.png")).toComposeImageBitmap()
+        Image.makeFromEncoded(readDesktopResourceBytes("drawable/noise.png")).toComposeImageBitmap()
     }.getOrNull()
 }
 
 actual fun loadNoiseImageBitmap(): ImageBitmap? = cachedNoiseBitmap
 
 private val cachedLogoBitmap: ImageBitmap by lazy {
-    Image.makeFromEncoded(readResourceBytes("drawable/sk_logo.png")).toComposeImageBitmap()
+    Image.makeFromEncoded(readDesktopResourceBytes("drawable/sk_logo.png")).toComposeImageBitmap()
 }
 
 actual fun loadLogoImageBitmap(): ImageBitmap = cachedLogoBitmap
@@ -291,138 +395,36 @@ actual fun openTextFileWithDialog(): String? = runCatching {
     if (target.exists() && target.isFile) target.readText(StandardCharsets.UTF_8) else null
 }.getOrNull()
 
-actual fun saveRosterPngWithDialog(year: Int, groupCode: String): String? = runCatching {
-    val group = runCatching { ShiftGroup.valueOf(groupCode) }.getOrDefault(ShiftGroup.A)
-    val dialog = FileDialog(null as Frame?, "Save Annual Roster (PNG)", FileDialog.SAVE)
-    dialog.file = "ShiftKar-Roster-$year-Group-${group.name}.png"
+actual fun savePngBytesWithDialog(defaultFileName: String, pngBytes: ByteArray): String? = runCatching {
+    val safeName = if (defaultFileName.endsWith(".png", ignoreCase = true)) defaultFileName else "$defaultFileName.png"
+    val dialog = FileDialog(null as Frame?, "Save Image (PNG)", FileDialog.SAVE)
+    dialog.file = safeName
     dialog.isVisible = true
     val dir = dialog.directory ?: return@runCatching null
     val fn = dialog.file ?: return@runCatching null
-    val target = File(dir, if (fn.endsWith(".png", ignoreCase = true)) fn else "$fn.png")
-
-    val width = 1600
-    val height = 1180
-    val img = BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB)
-    val g2 = img.createGraphics()
-    g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-    g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
-
-    val awtFontBase = runCatching {
-        java.awt.Font.createFont(
-            java.awt.Font.TRUETYPE_FONT,
-            readResourceBytes("font/iransansx_bold.ttf").inputStream()
-        )
-    }.getOrElse { java.awt.Font("SansSerif", java.awt.Font.BOLD, 16) }
-
-    g2.color = Color(12, 18, 36)
-    g2.fillRect(0, 0, width, height)
-
-    g2.font = awtFontBase.deriveFont(java.awt.Font.BOLD, 28f)
-    g2.color = Color(240, 245, 255)
-    val title = "لوحه سالانه شیفت‌کار — سال ${toPersianDigits(year)} (گروه ${group.name})"
-    val titleW = g2.fontMetrics.stringWidth(title)
-    g2.drawString(title, (width - titleW) / 2, 52)
-
-    g2.font = awtFontBase.deriveFont(java.awt.Font.BOLD, 15f)
-    val legends = listOf(
-        Triple("صبح‌کار", Color(245, 158, 11), Color(68, 48, 14)),
-        Triple("شب‌کار", Color(99, 102, 241), Color(30, 35, 82)),
-        Triple("استراحت", Color(16, 185, 129), Color(14, 58, 47)),
-        Triple("تعطیل / جمعه", Color(239, 68, 68), Color(68, 22, 32))
-    )
-    var lx = width / 2 - 250
-    for ((label, dotCol, _) in legends) {
-        g2.color = dotCol
-        g2.fillRoundRect(lx, 70, 16, 16, 6, 6)
-        g2.color = Color(200, 210, 230)
-        g2.drawString(label, lx + 24, 84)
-        lx += 135
-    }
-
-    val cols = 4
-    val marginX = 36
-    val startY = 110
-    val gapX = 20
-    val gapY = 20
-    val cardW = (width - marginX * 2 - gapX * (cols - 1)) / cols
-    val cardH = (height - startY - 40 - gapY * 2) / 3
-    val weekdays = listOf("ش", "ی", "د", "س", "چ", "پ", "ج")
-
-    for (idx in 0 until 12) {
-        val jm = idx + 1
-        val row = idx / cols
-        val colRtl = (cols - 1) - (idx % cols)
-        val x0 = marginX + colRtl * (cardW + gapX)
-        val y0 = startY + row * (cardH + gapY)
-
-        g2.color = Color(22, 31, 56)
-        g2.fillRoundRect(x0, y0, cardW, cardH, 24, 24)
-        g2.color = Color(45, 60, 98)
-        g2.stroke = BasicStroke(1.5f)
-        g2.drawRoundRect(x0, y0, cardW, cardH, 24, 24)
-
-        g2.font = awtFontBase.deriveFont(java.awt.Font.BOLD, 18f)
-        g2.color = Color(235, 242, 255)
-        val mTitle = "${JALALI_MONTHS[jm - 1]} ${toPersianDigits(year)}"
-        val mW = g2.fontMetrics.stringWidth(mTitle)
-        g2.drawString(mTitle, x0 + (cardW - mW) / 2, y0 + 30)
-
-        val cellPadX = 14
-        val gridW = cardW - cellPadX * 2
-        val cellW = gridW / 7
-        val cellH = 34
-
-        g2.font = awtFontBase.deriveFont(java.awt.Font.BOLD, 12f)
-        for (wIdx in 0 until 7) {
-            val colX = x0 + cellPadX + (6 - wIdx) * cellW
-            g2.color = if (wIdx == 6) Color(248, 113, 113) else Color(148, 163, 184)
-            val wStr = weekdays[wIdx]
-            val wW = g2.fontMetrics.stringWidth(wStr)
-            g2.drawString(wStr, colX + (cellW - wW) / 2, y0 + 54)
-        }
-
-        val len = jalaaliMonthLength(year, jm)
-        val firstWd = jalaaliWeekday(year, jm, 1)
-        g2.font = awtFontBase.deriveFont(java.awt.Font.BOLD, 13f)
-
-        for (d in 1..len) {
-            val pos = firstWd + (d - 1)
-            val r = pos / 7
-            val c = pos % 7
-            val cx = x0 + cellPadX + (6 - c) * cellW
-            val cy = y0 + 64 + r * (cellH + 4)
-
-            val key = makeDateKey(year, jm, d)
-            val code = ShiftEngine.getShiftCode(key, group)
-            val kind = codeToKind(code)
-            val isHol = Holidays.isHoliday(year, jm, d) || jalaaliWeekday(year, jm, d) == 6
-
-            val bgCol = when {
-                isHol -> Color(92, 28, 42)
-                kind == ShiftKind.DAY -> Color(78, 54, 16)
-                kind == ShiftKind.NIGHT -> Color(36, 42, 96)
-                else -> Color(16, 66, 54)
-            }
-            val fgCol = when {
-                isHol -> Color(252, 165, 165)
-                kind == ShiftKind.DAY -> Color(253, 224, 71)
-                kind == ShiftKind.NIGHT -> Color(165, 180, 252)
-                else -> Color(110, 231, 183)
-            }
-
-            g2.color = bgCol
-            g2.fillRoundRect(cx + 2, cy, cellW - 4, cellH, 10, 10)
-            g2.color = fgCol
-            val dStr = toPersianDigits(d)
-            val dW = g2.fontMetrics.stringWidth(dStr)
-            g2.drawString(dStr, cx + (cellW - dW) / 2, cy + 22)
-        }
-    }
-
-    g2.dispose()
-    ImageIO.write(img, "PNG", target)
+    val finalFn = if (fn.endsWith(".png", ignoreCase = true)) fn else "$fn.png"
+    val target = File(dir, finalFn)
+    target.writeBytes(pngBytes)
     target.absolutePath
 }.getOrNull()
+
+private class TransferableAwtImage(private val image: java.awt.Image) : Transferable {
+    override fun getTransferDataFlavors(): Array<DataFlavor> = arrayOf(DataFlavor.imageFlavor)
+    override fun isDataFlavorSupported(flavor: DataFlavor): Boolean = DataFlavor.imageFlavor.equals(flavor)
+    override fun getTransferData(flavor: DataFlavor): Any {
+        if (!isDataFlavorSupported(flavor)) throw UnsupportedFlavorException(flavor)
+        return image
+    }
+}
+
+actual fun copyPngBytesToClipboard(pngBytes: ByteArray): Boolean = runCatching {
+    val buffered: BufferedImage = ImageIO.read(ByteArrayInputStream(pngBytes)) ?: return false
+    val transferable = TransferableAwtImage(buffered)
+    Toolkit.getDefaultToolkit().systemClipboard.setContents(transferable, null)
+    true
+}.getOrDefault(false)
+
+actual fun saveRosterPngWithDialog(year: Int, groupCode: String): String? = null
 
 actual fun triggerPlatformHaptic(ms: Int) {
     // No-op on Desktop

@@ -4,7 +4,6 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -15,18 +14,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathOperation
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.input.pointer.PointerIcon
-import androidx.compose.ui.input.pointer.pointerHoverIcon
-import androidx.compose.ui.layout.LayoutCoordinates
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInRoot
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -36,10 +29,13 @@ import com.seyedhosseinmousavisaeedi.shiftkar.ui.theme.IRANSansX
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.theme.LocalSk
 
 /**
- * Guided tour — 5-step spotlight tour with exact local coordinate resolution.
- * Uses `overlayCoords.localBoundingBoxOf(targetCoords, clipBounds = false)`
- * (and root-offset translation fallback) so the spotlight cutout is 100% pixel-accurate
- * regardless of top status bars, window resizing, or display scaling.
+ * Guided tour (v6.5.4) — 6-step spotlight tour with smart non-overlapping tooltip positioning:
+ *  1) today-banner  — وضعیت شیفت امروز شما
+ *  2) month-nav     — جابه‌جایی ماه، یادداشت‌ها و نمای جدولی
+ *  3) group-filter  — فیلتر گروه، مقایسهٔ استراحت مشترک و خروجی تصویر
+ *  4) today-cell    — نشانگر روزِ شیفت (خورشید ۱ / ماه ۲)، اضافه‌کاری و جابه‌جایی
+ *  5) summary-strip — نوار خلاصهٔ ماهانهٔ نوبت‌ها و تعطیلات
+ *  6) bottom-nav    — لوحه کلاسیک، مدیریت شیفت و پرسنل، و تنظیمات
  */
 
 data class TourStep(
@@ -52,18 +48,47 @@ data class TourStep(
 }
 
 val TOUR_STEPS = listOf(
-    TourStep("today-banner", "شیفت امروز شما", "هر روز که وارد شوید، شیفت گروه شما اینجا خودکار محاسبه و نمایش داده می‌شود.", TourStep.Placement.BELOW),
-    TourStep("month-nav", "جابه‌جایی بین ماه‌ها", "با فلش‌ها ماه را عوض کنید، روی نام ماه بزنید تا مستقیم انتخاب کنید، یا روی صفحه بکشید. دکمهٔ یادداشت‌ها هم اینجاست.", TourStep.Placement.BELOW),
-    TourStep("group-filter", "فیلتر گروه", "شیفت گروه خودتان را ببینید یا با «همه» وضعیت هر چهار گروه را مقایسه کنید.", TourStep.Placement.BELOW),
-    TourStep("view-toggle", "دو نمای تقویم", "نمای «تقویم» مثل یک تقویم کلاسیک است؛ نمای «جدولی» شیفت هر چهار گروه را ردیف‌به‌ردیف نشان می‌دهد و حالت تمام‌صفحه هم دارد.", TourStep.Placement.BELOW),
-    TourStep("bottom-nav", "همه بخش‌ها اینجاست", "سامانه‌های شرکتی، لوحه شیفت سالانه و تنظیمات شخصی‌سازی از این نوار در دسترس‌اند.", TourStep.Placement.ABOVE)
+    TourStep(
+        "today-banner",
+        "وضعیت شیفت امروز شما",
+        "در این کارت، نوبت امروز شما (صبح‌کار، عصرکار، شب‌کار یا استراحت) به‌همراه شمارهٔ روز نوبت، ساعت اضافه‌کاری یا جابه‌جایی ثبت‌شده نمایش داده می‌شود. با لمس آن، جزئیات کامل امروز باز می‌شود.",
+        TourStep.Placement.BELOW
+    ),
+    TourStep(
+        "month-nav",
+        "جابه‌جایی ماه، یادداشت‌ها و نمای جدولی",
+        "با فلش‌ها یا کشیدن انگشت بین ماه‌ها جابه‌جا شوید، روی نام ماه بزنید تا سریع به هر سال و ماهی بروید، از آیکون یادداشت‌ها همهٔ یادداشت‌ها را مرور کنید یا بین نمای شبکه‌ای و جدولی تمام‌صفحه سوئیچ نمایید.",
+        TourStep.Placement.BELOW
+    ),
+    TourStep(
+        "group-filter",
+        "فیلتر گروه، مقایسهٔ دو شیفت و خروجی عکس",
+        "بین گروه‌ها یا حالت «همه» جابه‌جا شوید. نکتهٔ کاربردی: با نگه‌داشتن انگشت (لمس طولانی) روی یک گروه دیگر، روزهای استراحت مشترک دو شیفت در تقویم هایلایت می‌شود! دکمهٔ تصویر هم خروجی PNG ماه را می‌سازد.",
+        TourStep.Placement.BELOW
+    ),
+    TourStep(
+        "today-cell",
+        "نشانگر روزِ شیفت، اضافه‌کاری و جابه‌جایی",
+        "در هر خانهٔ تقویم، آیکون شیفت به‌همراه شمارهٔ روز آن نوبت (مثلاً خورشید ۱ یا ماه ۲) دیده می‌شود. با لمس هر روز می‌توانید یادداشت، ساعت اضافه‌کاری و جابه‌جایی شیفت ثبت کنید و وضعیت همکاران را ببینید.",
+        TourStep.Placement.ABOVE
+    ),
+    TourStep(
+        "summary-strip",
+        "خلاصهٔ آماری ماه در یک نگاه",
+        "در پایین تقویم، تعداد کل روزهای صبح‌کار، عصرکار، شب‌کار، تعطیلات رسمی و استراحتِ شما در آن ماه به‌صورت زنده شمارش و نمایش داده می‌شود.",
+        TourStep.Placement.ABOVE
+    ),
+    TourStep(
+        "bottom-nav",
+        "لوحه کلاسیک، مدیریت شیفت و پرسنل",
+        "از نوار پایین به «لوحه» (شامل لوحه کلاسیک سالانه با خروجی تصویر)، تب «مدیریت شیفت» (۴۵ الگوی آماده، ساخت شیفت سفارشی با قابلیت افزودن/حذف گروه‌ها، و مدیریت همکاران) و «تنظیمات» دسترسی دارید.",
+        TourStep.Placement.ABOVE
+    )
 )
 
-/** Registry: tour target key -> live LayoutCoordinates & root bounds. */
+/** Registry: tour target key -> global bounds. */
 object TourRegistry {
-    val coords = mutableStateMapOf<String, LayoutCoordinates>()
-    val bounds = mutableStateMapOf<String, Rect>()
-    var version by mutableIntStateOf(0)
+    val bounds = androidx.compose.runtime.mutableStateMapOf<String, Rect>()
 }
 
 @Composable
@@ -75,190 +100,140 @@ fun TourOverlay(
 ) {
     if (!active) return
     val sk = LocalSk.current
-    val density = LocalDensity.current
     val step = TOUR_STEPS[stepIndex.coerceIn(0, TOUR_STEPS.lastIndex)]
+    val box = TourRegistry.bounds[step.targetKey]
 
-    var overlayCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
-    var overlayRootPos by remember { mutableStateOf(Offset.Zero) }
-    var tooltipHeightPx by remember { mutableFloatStateOf(with(density) { 195.dp.toPx() }) }
 
-    // Recompute local target bounds whenever step, window size, density, or target coordinates update
-    val registryVersion = TourRegistry.version
-    val targetCoords = TourRegistry.coords[step.targetKey]
-    val rawRootBounds = TourRegistry.bounds[step.targetKey]
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val screenH = androidx.compose.ui.platform.LocalView.current.height.toFloat().coerceAtLeast(1f)
+    var measuredTooltipH by remember { mutableIntStateOf(with(density) { 215.dp.toPx().toInt() }) }
 
-    val box: Rect? = remember(step.targetKey, registryVersion, overlayCoords, overlayRootPos, targetCoords, rawRootBounds) {
-        val ov = overlayCoords
-        val tc = targetCoords
-        if (ov != null && ov.isAttached && tc != null && tc.isAttached) {
-            runCatching { ov.localBoundingBoxOf(tc, clipBounds = false) }.getOrNull()
-        } else if (rawRootBounds != null) {
-            rawRootBounds.translate(-overlayRootPos.x, -overlayRootPos.y)
-        } else {
-            null
-        }
-    }
-
-    BoxWithConstraints(
+    Box(
         Modifier
             .fillMaxSize()
-            .onGloballyPositioned { c ->
-                if (c.isAttached) {
-                    overlayCoords = c
-                    overlayRootPos = c.positionInRoot()
-                }
-            }
             .clickable(
-                interactionSource = remember { MutableInteractionSource() },
+                interactionSource = androidx.compose.foundation.interaction.MutableInteractionSource(),
                 indication = null
             ) { onNext() }
     ) {
-        val padPx = with(density) { 6.dp.toPx() }
-        val radiusPx = with(density) { 18.dp.toPx() }
-        val strokePx = with(density) { 2.dp.toPx() }
-
-        /* spotlight: dim layer with exact local cutout + primary highlight ring */
+        /* spotlight: dim layer with glowing primary ring around cutout */
+        val ringColor = sk.primary
         Canvas(Modifier.fillMaxSize()) {
-            val full = Path().apply { addRect(Rect(0f, 0f, size.width, size.height)) }
+            val full = Path().apply { addRect(androidx.compose.ui.geometry.Rect(0f, 0f, size.width, size.height)) }
             if (box != null) {
-                val left = (box.left - padPx).coerceAtLeast(2f)
-                val top = (box.top - padPx).coerceAtLeast(2f)
-                val right = (box.right + padPx).coerceAtMost(size.width - 2f)
-                val bottom = (box.bottom + padPx).coerceAtMost(size.height - 2f)
-
+                val pad = 8f
+                val l = (box.left - pad).coerceAtLeast(4f)
+                val t = (box.top - pad).coerceAtLeast(4f)
+                val r = (box.right + pad).coerceAtMost(size.width - 4f)
+                val b = (box.bottom + pad).coerceAtMost(size.height - 4f)
                 val hole = Path().apply {
                     addRoundRect(
-                        RoundRect(
-                            left = left,
-                            top = top,
-                            right = right,
-                            bottom = bottom,
-                            cornerRadius = CornerRadius(radiusPx, radiusPx)
-                        )
+                        androidx.compose.ui.geometry.RoundRect(l, t, r, b, 20f, 20f)
                     )
                 }
                 val cut = Path().apply { op(full, hole, PathOperation.Difference) }
-                drawPath(cut, Color.Black.copy(alpha = 0.74f))
-
-                // Crisp highlight ring around the exact target
+                drawPath(cut, Color.Black.copy(alpha = 0.76f))
                 drawRoundRect(
-                    color = sk.primary.copy(alpha = 0.85f),
-                    topLeft = Offset(left, top),
-                    size = Size((right - left).coerceAtLeast(1f), (bottom - top).coerceAtLeast(1f)),
-                    cornerRadius = CornerRadius(radiusPx, radiusPx),
-                    style = Stroke(width = strokePx)
+                    color = ringColor,
+                    topLeft = Offset(l, t),
+                    size = Size((r - l).coerceAtLeast(1f), (b - t).coerceAtLeast(1f)),
+                    cornerRadius = CornerRadius(20f, 20f),
+                    style = Stroke(width = 3.5f)
                 )
             } else {
-                drawRect(Color.Black.copy(alpha = 0.74f))
+                drawRect(Color.Black.copy(alpha = 0.76f))
             }
         }
 
-        if (box != null) {
-            val gap = with(density) { 14.dp.toPx() }
-            val marginPx = with(density) { 12.dp.toPx() }
-            val screenH = with(density) { maxHeight.toPx() }.coerceAtLeast(1f)
+        val gap = with(density) { 16.dp.toPx() }
+        val safeTop = with(density) { 54.dp.toPx() }
+        val safeBottom = screenH - measuredTooltipH - with(density) { 24.dp.toPx() }
 
-            // Automatically flip placement if there isn't enough vertical space on the preferred side
+        val tooltipTop = if (box != null) {
+            val roomBelow = screenH - box.bottom - gap - with(density) { 24.dp.toPx() }
+            val roomAbove = box.top - gap - safeTop
             val preferBelow = step.placement == TourStep.Placement.BELOW
-            val spaceBelow = screenH - (box.bottom + padPx + gap)
-            val spaceAbove = (box.top - padPx - gap)
-            val placeBelow = if (preferBelow) {
-                spaceBelow >= tooltipHeightPx || spaceBelow >= spaceAbove
-            } else {
-                spaceAbove < tooltipHeightPx && spaceBelow > spaceAbove
+            when {
+                preferBelow && roomBelow >= measuredTooltipH -> box.bottom + gap
+                !preferBelow && roomAbove >= measuredTooltipH -> box.top - gap - measuredTooltipH
+                roomBelow >= roomAbove -> (box.bottom + gap).coerceIn(safeTop, safeBottom.coerceAtLeast(safeTop))
+                else -> (box.top - gap - measuredTooltipH).coerceIn(safeTop, safeBottom.coerceAtLeast(safeTop))
             }
+        } else {
+            ((screenH - measuredTooltipH) / 2f).coerceAtLeast(safeTop)
+        }
 
-            val tooltipTop = if (placeBelow) {
-                (box.bottom + padPx + gap).coerceIn(marginPx, (screenH - tooltipHeightPx - marginPx).coerceAtLeast(marginPx))
-            } else {
-                (box.top - padPx - gap - tooltipHeightPx).coerceIn(marginPx, (screenH - tooltipHeightPx - marginPx).coerceAtLeast(marginPx))
-            }
-
-            Box(
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .offset { IntOffset(0, tooltipTop.toInt()) }
+                .onSizeChanged { if (it.height > 0) measuredTooltipH = it.height }
+        ) {
+            Column(
                 Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .offset { IntOffset(0, tooltipTop.toInt()) },
-                contentAlignment = Alignment.TopCenter
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(sk.sheetSolid)
+                    .border(1.5.dp, sk.primary.copy(alpha = 0.45f), RoundedCornerShape(24.dp))
+                    .padding(20.dp)
             ) {
-                Column(
-                    Modifier
-                        .widthIn(max = 520.dp)
-                        .fillMaxWidth()
-                        .onGloballyPositioned { c ->
-                            if (c.size.height > 0) {
-                                tooltipHeightPx = c.size.height.toFloat()
-                            }
-                        }
-                        .clip(RoundedCornerShape(24.dp))
-                        .background(sk.sheetSolid)
-                        .border(1.dp, sk.border, RoundedCornerShape(24.dp))
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null
-                        ) { /* consume clicks inside tooltip card */ }
-                        .padding(20.dp)
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            "${toPersianDigits(stepIndex + 1)} / ${toPersianDigits(TOUR_STEPS.size)}",
-                            Modifier
-                                .clip(RoundedCornerShape(100))
-                                .background(sk.primarySoft)
-                                .padding(horizontal = 10.dp, vertical = 4.dp),
-                            fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = IRANSansX, color = sk.primary
-                        )
-                        Text(
-                            "پایان آموزش",
-                            Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .pointerHoverIcon(PointerIcon.Hand)
-                                .clickableNoRippleCompat(onFinish)
-                                .padding(4.dp),
-                            fontSize = 12.sp, fontFamily = IRANSansX, color = sk.textFaint
-                        )
-                    }
                     Text(
-                        step.title,
-                        Modifier.padding(top = 8.dp),
-                        fontSize = 16.sp, fontWeight = FontWeight.Black, fontFamily = IRANSansX, color = sk.text
-                    )
-                    Text(
-                        step.text,
-                        Modifier.padding(top = 6.dp),
-                        fontSize = 13.sp, lineHeight = 24.sp, fontFamily = IRANSansX, color = sk.textMuted
-                    )
-                    Spacer(Modifier.height(16.dp))
-                    Box(
+                        "گام ${toPersianDigits(stepIndex + 1)} از ${toPersianDigits(TOUR_STEPS.size)}",
                         Modifier
-                            .fillMaxWidth()
-                            .height(44.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(sk.primary)
-                            .pointerHoverIcon(PointerIcon.Hand)
-                            .clickableNoRippleCompat(onNext),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            if (stepIndex >= TOUR_STEPS.size - 1) "فهمیدم، شروع کنیم" else "بعدی",
-                            fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = IRANSansX, color = sk.sheetSolid
-                        )
-                    }
+                            .clip(RoundedCornerShape(100))
+                            .background(sk.primarySoft)
+                            .padding(horizontal = 12.dp, vertical = 4.dp),
+                        fontSize = 11.5.sp, fontWeight = FontWeight.Black, fontFamily = IRANSansX, color = sk.primary
+                    )
+                    Text(
+                        "پایان آموزش",
+                        Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickableNoRippleCompat(onFinish)
+                            .padding(4.dp),
+                        fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = IRANSansX, color = sk.textFaint
+                    )
+                }
+                Text(
+                    step.title,
+                    Modifier.padding(top = 8.dp),
+                    fontSize = 15.5.sp, fontWeight = FontWeight.Black, fontFamily = IRANSansX, color = sk.text
+                )
+                Text(
+                    step.text,
+                    Modifier.padding(top = 6.dp),
+                    fontSize = 12.5.sp, lineHeight = 22.sp, fontFamily = IRANSansX, color = sk.textMuted
+                )
+                Spacer(Modifier.height(14.dp))
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(44.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(sk.primary)
+                        .clickableNoRippleCompat(onNext),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        if (stepIndex >= TOUR_STEPS.size - 1) "فهمیدم، شروع کنیم" else "بعدی",
+                        fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = IRANSansX, color = sk.sheetSolid
+                    )
                 }
             }
         }
     }
 }
 
-/** Local no-ripple clickable that avoids importing the whole components package. */
 private fun Modifier.clickableNoRippleCompat(onClick: () -> Unit): Modifier =
     this.then(
         Modifier.clickable(
-            interactionSource = MutableInteractionSource(),
+            interactionSource = androidx.compose.foundation.interaction.MutableInteractionSource(),
             indication = null,
             onClick = onClick
         )

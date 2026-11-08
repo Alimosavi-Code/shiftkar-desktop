@@ -6,10 +6,11 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.Image
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -17,30 +18,24 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.painter.BitmapPainter
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.seyedhosseinmousavisaeedi.shiftkar.engine.APP
-import com.seyedhosseinmousavisaeedi.shiftkar.engine.HolidaysLoader
-import com.seyedhosseinmousavisaeedi.shiftkar.engine.TabId
-import com.seyedhosseinmousavisaeedi.shiftkar.platform.loadLogoImageBitmap
+import com.seyedhosseinmousavisaeedi.shiftkar.engine.*
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.AppViewModel
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.SkStrings
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.calendar.CalendarScreen
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.calendar.DaySheet
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.calendar.MonthPickerSheet
-import com.seyedhosseinmousavisaeedi.shiftkar.ui.components.AuroraBackground
-import com.seyedhosseinmousavisaeedi.shiftkar.ui.components.FrostBarBackdrop
-import com.seyedhosseinmousavisaeedi.shiftkar.ui.components.SkIcons
-import com.seyedhosseinmousavisaeedi.shiftkar.ui.components.ToastHost
-import com.seyedhosseinmousavisaeedi.shiftkar.ui.components.clickableNoRipple
-import com.seyedhosseinmousavisaeedi.shiftkar.ui.components.tourTarget
+import com.seyedhosseinmousavisaeedi.shiftkar.ui.components.*
+import com.seyedhosseinmousavisaeedi.shiftkar.ui.manager.ShiftManagerScreen
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.notes.NotesSheet
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.onboarding.OnboardingScreen
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.onboarding.TOUR_STEPS
@@ -67,6 +62,7 @@ private val TABS = listOf(
     TabSpec(TabId.CALENDAR, SkStrings.tab_calendar, SkIcons.Calendar),
     TabSpec(TabId.SYSTEMS, SkStrings.tab_systems, SkIcons.Systems),
     TabSpec(TabId.ROSTER, SkStrings.tab_roster, SkIcons.Roster),
+    TabSpec(TabId.MANAGER, "مدیریت شیفت", SkIcons.Group),
     TabSpec(TabId.SETTINGS, SkStrings.tab_settings, SkIcons.Settings)
 )
 
@@ -99,7 +95,9 @@ fun AppRoot(
     openFromNotification: Boolean = false,
     autoInstallFromNotification: Boolean = false,
     escapeTrigger: Int = 0,
-    openNotesTrigger: Int = 0
+    openNotesTrigger: Int = 0,
+    requestedTabTrigger: Pair<Int, TabId>? = null,
+    requestedDayKeyTrigger: Pair<Int, String>? = null
 ) {
     val s = vm.settings.collectAsState().value
     val sk = LocalSk.current
@@ -136,11 +134,26 @@ fun AppRoot(
         }
     }
 
+    LaunchedEffect(requestedTabTrigger?.first) {
+        val target = requestedTabTrigger?.second
+        if (target != null && s.onboardingDone && !showSplash) {
+            tab = target
+        }
+    }
+
+    LaunchedEffect(requestedDayKeyTrigger?.first) {
+        val targetKey = requestedDayKeyTrigger?.second
+        if (!targetKey.isNullOrBlank() && s.onboardingDone && !showSplash) {
+            dayKey = targetKey
+        }
+    }
+
     LaunchedEffect(Unit) {
         HolidaysLoader.kick()
-        delay(750)
+        CalendarSync.syncInBackground()
+        delay(650)
         while (!HolidaysLoader.ready) {
-            delay(40)
+            delay(35)
         }
         showSplash = false
     }
@@ -242,7 +255,17 @@ fun AppRoot(
                                 onTableFullscreen = { tableFsActive = it }
                             )
                             TabId.SYSTEMS -> SystemsScreen()
-                            TabId.ROSTER -> RosterScreen(vm)
+                            TabId.ROSTER -> RosterScreen(
+                                vm = vm,
+                                onOpenMonth = { y, m ->
+                                    vm.setViewMonth(y, m)
+                                    tab = TabId.CALENDAR
+                                }
+                            )
+                            TabId.MANAGER -> ShiftManagerScreen(
+                                vm = vm,
+                                onOpenDay = { k -> dayKey = k }
+                            )
                             TabId.SETTINGS -> SettingsScreen(
                                 vm = vm,
                                 onOpenUpdater = {
@@ -250,7 +273,10 @@ fun AppRoot(
                                         Updater.state.value.status == UpdateState.Status.DOWNLOADED
                                     updaterOpen = true
                                 },
-                                onStartTour = { tourStep = 0 },
+                                onStartTour = {
+                                    tab = TabId.CALENDAR
+                                    tourStep = 0
+                                },
                                 onRestartOnboarding = { vm.restartOnboarding() }
                             )
                         }
@@ -270,7 +296,12 @@ fun AppRoot(
                 }
             }
 
-            MonthPickerSheet(vm, monthPickerOpen) { monthPickerOpen = false }
+            MonthPickerSheet(
+                vm = vm,
+                visible = monthPickerOpen,
+                onDismiss = { monthPickerOpen = false },
+                onOpenDay = { k -> dayKey = k }
+            )
             NotesSheet(vm, notesOpen, { notesOpen = false }) { k -> dayKey = k }
             DaySheet(vm, dayKey) { dayKey = null }
             if (updaterOpen) {
@@ -334,7 +365,7 @@ private fun NavRow(current: TabId, auroraSize: IntSize, onSelect: (TabId) -> Uni
             auroraSizePx = auroraSize,
             shape = RoundedCornerShape(26.dp),
             modifier = Modifier
-                .widthIn(max = 520.dp)
+                .widthIn(max = 560.dp)
                 .fillMaxWidth()
                 .tourTarget("bottom-nav")
         ) {
@@ -356,10 +387,13 @@ private fun NavRow(current: TabId, auroraSize: IntSize, onSelect: (TabId) -> Uni
                                     .clip(RoundedCornerShape(20.dp))
                                     .background(
                                         Brush.verticalGradient(
-                                            listOf(sk.primary.copy(alpha = 0.22f), sk.primary.copy(alpha = 0.08f))
+                                            listOf(
+                                                sk.primary.copy(alpha = 0.24f),
+                                                sk.primary.copy(alpha = 0.09f)
+                                            )
                                         )
                                     )
-                                    .border(1.dp, sk.primary.copy(alpha = 0.25f), RoundedCornerShape(20.dp))
+                                    .border(1.dp, sk.primary.copy(alpha = 0.30f), RoundedCornerShape(20.dp))
                                 else Modifier
                             )
                             .clickableNoRipple { onSelect(t.id) },
@@ -367,14 +401,19 @@ private fun NavRow(current: TabId, auroraSize: IntSize, onSelect: (TabId) -> Uni
                         verticalArrangement = Arrangement.Center
                     ) {
                         Icon(
-                            t.icon, label, Modifier.size(20.dp),
+                            t.icon,
+                            label,
+                            Modifier.size(20.dp),
                             tint = if (active) sk.primary else sk.textFaint
                         )
                         Text(
                             label,
                             Modifier.padding(top = 4.dp),
-                            fontSize = 10.5.sp, fontWeight = FontWeight.Bold, fontFamily = IRANSansX,
-                            color = if (active) sk.primary else sk.textFaint
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = IRANSansX,
+                            color = if (active) sk.primary else sk.textFaint,
+                            maxLines = 1
                         )
                     }
                 }
@@ -386,21 +425,98 @@ private fun NavRow(current: TabId, auroraSize: IntSize, onSelect: (TabId) -> Uni
 @Composable
 private fun SplashArt(modifier: Modifier = Modifier) {
     val sk = LocalSk.current
-    val logo = remember { BitmapPainter(loadLogoImageBitmap()) }
+    val dayKc = kindColors(ShiftKind.DAY)
+    val eveKc = kindColors(ShiftKind.EVENING)
+    val nightKc = kindColors(ShiftKind.NIGHT)
+    val restKc = kindColors(ShiftKind.REST)
+    val hasEvening = ShiftEngine.activePattern.eveningCount > 0
+
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Image(
-            painter = logo,
-            contentDescription = null,
-            modifier = Modifier
-                .size(92.dp)
-                .shadow(10.dp, RoundedCornerShape(30.dp))
-                .clip(RoundedCornerShape(30.dp))
-        )
+        Box(
+            Modifier
+                .size(104.dp)
+                .clip(RoundedCornerShape(32.dp))
+                .background(sk.surfaceStrong)
+                .border(
+                    width = 2.dp,
+                    brush = Brush.linearGradient(listOf(sk.primary, sk.glowB, sk.primaryStrong)),
+                    shape = RoundedCornerShape(32.dp)
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Canvas(Modifier.size(82.dp)) {
+                val strokeW = 5.5.dp.toPx()
+                listOf(dayKc, eveKc, nightKc, restKc).forEachIndexed { idx, kc ->
+                    drawArc(
+                        brush = Brush.linearGradient(listOf(kc.ink, kc.bg, kc.ink)),
+                        startAngle = idx * 90f + 12f,
+                        sweepAngle = 66f,
+                        useCenter = false,
+                        style = Stroke(width = strokeW, cap = StrokeCap.Round)
+                    )
+                }
+            }
+            Box(
+                Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(Brush.linearGradient(listOf(sk.primary, sk.primaryStrong))),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(SkIcons.Calendar, null, Modifier.size(24.dp), tint = Color.White)
+            }
+        }
+
+        Spacer(Modifier.height(18.dp))
+        GradientText(APP.NAME, fontSize = 26, fontWeight = FontWeight.Black)
         Text(
-            APP.NAME,
-            Modifier.padding(top = 16.dp),
-            fontSize = 18.sp, fontWeight = FontWeight.Black, fontFamily = IRANSansX,
-            color = sk.primary
+            APP.TAGLINE,
+            Modifier.padding(top = 4.dp),
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = IRANSansX,
+            color = sk.textMuted
         )
+
+        Spacer(Modifier.height(18.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            val pills = buildList {
+                add(Triple("صبح‌کار", dayKc, SkIcons.Sun))
+                if (hasEvening) add(Triple("عصرکار", eveKc, SkIcons.Sunset))
+                add(Triple("شب‌کار", nightKc, SkIcons.Moon))
+                add(Triple("استراحت", restKc, SkIcons.Rest))
+            }
+            pills.forEach { (lbl, kc, ic) ->
+                Row(
+                    Modifier
+                        .height(28.dp)
+                        .clip(RoundedCornerShape(100))
+                        .background(kc.brush)
+                        .border(0.8.dp, kc.ink.copy(alpha = 0.3f), RoundedCornerShape(100))
+                        .padding(horizontal = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(ic, null, Modifier.size(12.dp), tint = kc.ink)
+                    Text(lbl, fontSize = 10.5.sp, fontWeight = FontWeight.Black, fontFamily = IRANSansX, color = kc.ink)
+                }
+            }
+        }
+
+        Spacer(Modifier.height(18.dp))
+        Box(
+            Modifier
+                .glass(RoundedCornerShape(100))
+                .border(1.dp, sk.primary.copy(alpha = 0.4f), RoundedCornerShape(100))
+                .padding(horizontal = 14.dp, vertical = 5.dp)
+        ) {
+            Text(
+                "نسخهٔ ${toPersianDigits(APP.VERSION)}",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.ExtraBold,
+                fontFamily = IRANSansX,
+                color = sk.primary
+            )
+        }
     }
 }

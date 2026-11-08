@@ -1,4 +1,4 @@
-name: Build & Release Desktop Installers (v6.2.0 — x64 + ARM64 + SHA-256)
+name: Build & Release Desktop Installers (v6.7.3 — x64 + ARM64 + SHA-256)
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 env:
-  APP_VERSION: "6.2.0"
+  APP_VERSION: "6.7.3"
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
@@ -326,7 +326,7 @@ jobs:
   # 7. AUTOMATIC GITHUB RELEASE, SHA-256 GENERATOR & TAG PUBLISHER
   # ==================================================================
   publish-release:
-    name: Publish GitHub Release & SHA-256 Checksums (v6.2.0)
+    name: Publish GitHub Release & SHA-256 Checksums (v6.7.3)
     needs:
       - build-linux-x64
       - build-linux-arm64
@@ -374,5 +374,8 @@ jobs:
             gh release upload "$TAG" release-assets/* --clobber
           else
             echo "Creating new GitHub Release $TAG..."
-            gh release create "$TAG" release-assets/*               --title "ShiftKar Desktop v${APP_VERSION}"               --notes-file release-assets/SHA256SUMS.txt               --target "${{ github.sha }}"
+            gh release create "$TAG" release-assets/* \
+              --title "ShiftKar Desktop v${APP_VERSION}" \
+              --notes-file release-assets/SHA256SUMS.txt \
+              --target "${{ github.sha }}"
           fi

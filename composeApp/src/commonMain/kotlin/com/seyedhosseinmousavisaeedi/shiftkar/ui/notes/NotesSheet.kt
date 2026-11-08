@@ -14,32 +14,55 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.seyedhosseinmousavisaeedi.shiftkar.engine.formatJalali
-import com.seyedhosseinmousavisaeedi.shiftkar.engine.formatWeekday
-import com.seyedhosseinmousavisaeedi.shiftkar.engine.parseDateKey
-import com.seyedhosseinmousavisaeedi.shiftkar.engine.toPersianDigits
-import com.seyedhosseinmousavisaeedi.shiftkar.platform.openTextFileWithDialog
-import com.seyedhosseinmousavisaeedi.shiftkar.platform.saveTextFileWithDialog
+import com.seyedhosseinmousavisaeedi.shiftkar.data.DayRecord
+import com.seyedhosseinmousavisaeedi.shiftkar.engine.*
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.AppViewModel
-import com.seyedhosseinmousavisaeedi.shiftkar.ui.components.ToastCenter
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.components.SkIcons
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.components.SkSheet
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.components.clickableNoRipple
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.components.glass
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.theme.IRANSansX
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.theme.LocalSk
+import com.seyedhosseinmousavisaeedi.shiftkar.util.rememberHaptics
 
 /**
- * All-notes sheet — searchable list of personal notes (notes-sheet.tsx port).
+ * All-notes & shift log sheet (v6.4.0):
+ *  - Combines personal notes, overtime hours, and shift swaps
+ *  - Smart Persian search (matches month names like «آبان», weekdays like «جمعه», Persian/ASCII numbers, or note text)
+ *  - Quick filters: همه | این ماه | اضافه‌کاری و جابه‌جایی
  */
 
-/* v6.1.0: ردیفِ آمادهٔ نمایش — برچسب تاریخ قالب‌بندی‌شده فقط یک‌بار ساخته می‌شود */
-private data class NoteRow(val dateKey: String, val text: String, val label: String)
+private enum class NoteLogFilter { ALL, CURRENT_MONTH, OVERTIME_OR_SWAP }
+
+private data class NoteLogRow(
+    val dateKey: String,
+    val jy: Int,
+    val jm: Int,
+    val jd: Int,
+    val text: String,
+    val record: DayRecord?,
+    val label: String,
+    val searchableText: String
+)
+
+private fun normalizeDigits(input: String): String {
+    val persian = "۰۱۲۳۴۵۶۷۸۹"
+    val arabic = "٠١٢٣٤٥٦٧٨٩"
+    val sb = StringBuilder(input.length)
+    for (ch in input) {
+        val pIdx = persian.indexOf(ch)
+        val aIdx = arabic.indexOf(ch)
+        when {
+            pIdx >= 0 -> sb.append(('0' + pIdx))
+            aIdx >= 0 -> sb.append(('0' + aIdx))
+            else -> sb.append(ch)
+        }
+    }
+    return sb.toString()
+}
 
 @Composable
 fun NotesSheet(
@@ -50,33 +73,60 @@ fun NotesSheet(
 ) {
     val sk = LocalSk.current
     val s = vm.settings.collectAsState().value
+    val haptic = rememberHaptics(s.hapticOn)
     val notes = vm.notesFlow.collectAsState().value
     var q by remember { mutableStateOf("") }
-    val scope = rememberCoroutineScope()
+    var filter by remember { mutableStateOf(NoteLogFilter.ALL) }
 
-    /* v6.1.0 (بازبینی کد): مرتب‌سازی + قالب‌بندی تاریخ هر یادداشت «یک‌بار به‌ازای
-     * هر تغییر notes» محاسبه می‌شود — قبلاً هر کلیدِ جستجو کل فهرست را دوباره
-     * مرتب می‌کرد و parseDateKey/formatWeekday/formatJalali داخل حلقهٔ
-     * ریکامپوزیشن برای همهٔ ردیف‌ها تکرار می‌شد. */
-    val rows = remember(notes) {
-        notes.entries
-            .sortedByDescending { it.key }
-            .map { (dateKey, text) ->
-                val j = parseDateKey(dateKey)
-                NoteRow(dateKey, text, "${formatWeekday(j.jy, j.jm, j.jd)} · ${formatJalali(j.jy, j.jm, j.jd)}")
+    val rows = remember(notes, s.dayRecords) {
+        val allKeys = (notes.keys + s.dayRecords.keys).toSortedSet(compareByDescending { it })
+        allKeys.mapNotNull { dateKey ->
+            val noteText = notes[dateKey]?.trim() ?: ""
+            val rec = s.dayRecords[dateKey]?.takeIf { !it.isEmpty }
+            if (noteText.isEmpty() && rec == null) return@mapNotNull null
+            val j = parseDateKey(dateKey)
+            val wd = formatWeekday(j.jy, j.jm, j.jd)
+            val jalaliStr = formatJalali(j.jy, j.jm, j.jd)
+            val label = "$wd · $jalaliStr"
+            val recTags = buildString {
+                if ((rec?.overtimeHours ?: 0f) > 0f) append(" اضافه‌کاری ${rec!!.overtimeHours.toInt()} ساعت ")
+                if (rec?.swapKind != null) append(" جابه‌جایی ${SHIFT_KIND_FA.getValue(rec.swapKind)} ")
             }
-    }
-    val filtered = remember(rows, q) {
-        if (q.isBlank()) rows else rows.filter {
-            it.text.contains(q.trim()) || it.dateKey.contains(q.trim())
+            val searchable = normalizeDigits("$dateKey $label $noteText $recTags")
+            NoteLogRow(
+                dateKey = dateKey,
+                jy = j.jy,
+                jm = j.jm,
+                jd = j.jd,
+                text = noteText,
+                record = rec,
+                label = label,
+                searchableText = searchable
+            )
         }
     }
 
-    /* v2.2.3: `visible` flag → SkSheet owns the open/close slide animation */
-    SkSheet(visible = visible, onDismiss = onDismiss, title = "یادداشت‌های من") {
+    val filtered = remember(rows, q, filter, s.viewYear, s.viewMonth) {
+        val normQ = normalizeDigits(q.trim())
+        rows.filter { r ->
+            val matchesFilter = when (filter) {
+                NoteLogFilter.ALL -> true
+                NoteLogFilter.CURRENT_MONTH -> r.jy == s.viewYear && r.jm == s.viewMonth
+                NoteLogFilter.OVERTIME_OR_SWAP -> r.record != null
+            }
+            val matchesQuery = normQ.isEmpty() || r.searchableText.contains(normQ, ignoreCase = true)
+            matchesFilter && matchesQuery
+        }
+    }
+
+    val totalOvertime = remember(filtered) {
+        filtered.sumOf { (it.record?.overtimeHours ?: 0f).toDouble() }.toFloat()
+    }
+
+    SkSheet(visible = visible, onDismiss = onDismiss, title = "یادداشت‌ها و سوابق شیفت") {
         Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp)) {
 
-            /* search field — v2.2.4: full glass recipe */
+            /* Search field */
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -94,7 +144,14 @@ fun NotesSheet(
                     cursorBrush = SolidColor(sk.primary),
                     decorationBox = { inner ->
                         Box {
-                            if (q.isEmpty()) Text("جستجو در یادداشت‌ها…", fontSize = 14.sp, fontFamily = IRANSansX, color = sk.textFaint)
+                            if (q.isEmpty()) {
+                                Text(
+                                    "جستجو با متن، نام ماه (مثلاً آبان)، روز هفته یا تاریخ…",
+                                    fontSize = 12.5.sp,
+                                    fontFamily = IRANSansX,
+                                    color = sk.textFaint
+                                )
+                            }
                             inner()
                         }
                     },
@@ -104,61 +161,70 @@ fun NotesSheet(
 
             Spacer(Modifier.height(10.dp))
 
-            /* Desktop Backup & Restore Row */
+            /* Filter chips */
             Row(
                 Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
+                listOf(
+                    NoteLogFilter.ALL to "همه",
+                    NoteLogFilter.CURRENT_MONTH to "${JALALI_MONTHS[s.viewMonth - 1]} ${toPersianDigits(s.viewYear)}",
+                    NoteLogFilter.OVERTIME_OR_SWAP to "اضافه‌کاری / جابه‌جایی"
+                ).forEach { (fMode, label) ->
+                    val active = filter == fMode
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .height(34.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (active) sk.primarySoft else sk.surface)
+                            .border(
+                                width = if (active) 1.5.dp else 1.dp,
+                                color = if (active) sk.primary else sk.borderSoft,
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .clickableNoRipple {
+                                haptic.tick()
+                                filter = fMode
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            label,
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = IRANSansX,
+                            color = if (active) sk.primary else sk.textMuted
+                        )
+                    }
+                }
+            }
+
+            if (totalOvertime > 0f) {
+                Spacer(Modifier.height(8.dp))
                 Row(
                     Modifier
-                        .weight(1f)
+                        .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
                         .background(sk.primarySoft)
-                        .border(1.dp, sk.primary.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
-                        .clickableNoRipple {
-                            scope.launch {
-                                val jsonText = vm.notesRepo.exportJson()
-                                val saved = withContext(Dispatchers.Default) {
-                                    saveTextFileWithDialog("shiftkar-notes-backup.json", jsonText)
-                                }
-                                if (saved != null) {
-                                    ToastCenter.show("فایل پشتیبان یادداشت‌ها ذخیره شد")
-                                }
-                            }
-                        }
-                        .padding(vertical = 9.dp, horizontal = 10.dp),
-                    horizontalArrangement = Arrangement.Center,
+                        .padding(horizontal = 12.dp, vertical = 7.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(SkIcons.Download, null, Modifier.size(14.dp), tint = sk.primary)
-                    Text("پشتیبان‌گیری (JSON)", Modifier.padding(start = 6.dp), fontSize = 11.5.sp, fontWeight = FontWeight.Bold, fontFamily = IRANSansX, color = sk.primary)
-                }
-
-                Row(
-                    Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(sk.surface)
-                        .border(1.dp, sk.borderSoft, RoundedCornerShape(12.dp))
-                        .clickableNoRipple {
-                            scope.launch {
-                                val raw = withContext(Dispatchers.Default) { openTextFileWithDialog() }
-                                if (raw != null) {
-                                    val count = vm.notesRepo.importJson(raw)
-                                    if (count >= 0) {
-                                        ToastCenter.show("${toPersianDigits(count)} یادداشت با موفقیت بازیابی شد")
-                                    } else {
-                                        ToastCenter.show("فرمت فایل پشتیبان نامعتبر است")
-                                    }
-                                }
-                            }
-                        }
-                        .padding(vertical = 9.dp, horizontal = 10.dp),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(SkIcons.Refresh, null, Modifier.size(14.dp), tint = sk.textMuted)
-                    Text("بازیابی از فایل", Modifier.padding(start = 6.dp), fontSize = 11.5.sp, fontWeight = FontWeight.Bold, fontFamily = IRANSansX, color = sk.text)
+                    Text(
+                        "مجموع اضافه‌کاری موارد نمایش‌داده‌شده:",
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = IRANSansX,
+                        color = sk.text
+                    )
+                    Text(
+                        "${toPersianDigits(totalOvertime.toInt())} ساعت",
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.Black,
+                        fontFamily = IRANSansX,
+                        color = sk.primary
+                    )
                 }
             }
 
@@ -166,7 +232,7 @@ fun NotesSheet(
 
             if (filtered.isEmpty()) {
                 Column(
-                    Modifier.fillMaxWidth().padding(vertical = 48.dp),
+                    Modifier.fillMaxWidth().padding(vertical = 42.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Box(
@@ -176,52 +242,80 @@ fun NotesSheet(
                         Icon(SkIcons.Notes, null, Modifier.size(24.dp), tint = sk.primary)
                     }
                     Text(
-                        "هنوز یادداشتی نیست",
+                        "موردی یافت نشد",
                         Modifier.padding(top = 12.dp),
                         fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = IRANSansX, color = sk.text
                     )
                     Text(
-                        "از تقویم روی هر روز بزنید و یادداشت بسازید",
+                        "از تقویم روی هر روز بزنید تا یادداشت، اضافه‌کاری یا جابه‌جایی ثبت کنید",
                         Modifier.padding(top = 4.dp),
-                        fontSize = 12.sp, fontFamily = IRANSansX, color = sk.textMuted
+                        fontSize = 12.sp, fontFamily = IRANSansX, color = sk.textMuted,
+                        textAlign = TextAlign.Center
                     )
                 }
             } else {
-                /* فهرست یادداشت‌ها داخل بدنهٔ خود Sheet (verticalScroll) رندر می‌شود؛
-                 * LazyColumn اینجا مجاز نیست — ارتفاع نامحدود گرفتن باعث کرش
-                 * "measured with an infinity maximum height constraints" می‌شد. */
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     filtered.forEach { row ->
-                        val dateKey = row.dateKey
-                        val text = row.text
                         Row(
                             Modifier
                                 .fillMaxWidth()
-                                /* v2.2.4: کارت یادداشت شیشه‌ای + هویت زرد زیر شیشه */
-                                .glass(RoundedCornerShape(16.dp), tint = sk.note)
-                                .border(1.dp, sk.noteInk.copy(alpha = 0.25f), RoundedCornerShape(16.dp))
+                                .glass(RoundedCornerShape(16.dp))
+                                .border(1.dp, sk.border, RoundedCornerShape(16.dp))
                                 .clickableNoRipple {
                                     onDismiss()
-                                    onOpenDay(dateKey)
+                                    onOpenDay(row.dateKey)
                                 }
                                 .padding(start = 16.dp, end = 10.dp, top = 12.dp, bottom = 12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(Modifier.weight(1f)) {
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                                    Icon(SkIcons.Calendar, null, Modifier.size(11.dp), tint = sk.noteInk)
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(SkIcons.Calendar, null, Modifier.size(11.dp), tint = sk.primary)
                                     Text(
                                         row.label,
                                         fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = IRANSansX,
-                                        color = sk.noteInk
+                                        color = sk.primary
+                                    )
+                                    val ot = row.record?.overtimeHours ?: 0f
+                                    if (ot > 0f) {
+                                        Text(
+                                            "+${toPersianDigits(ot.toInt())} ساعت",
+                                            Modifier
+                                                .clip(RoundedCornerShape(100))
+                                                .background(sk.primarySoft)
+                                                .padding(horizontal = 7.dp, vertical = 1.dp),
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Black,
+                                            fontFamily = IRANSansX,
+                                            color = sk.primary
+                                        )
+                                    }
+                                    val sw = row.record?.swapKind
+                                    if (sw != null) {
+                                        Text(
+                                            "جابه‌جایی: ${SHIFT_KIND_FA.getValue(sw)}",
+                                            Modifier
+                                                .clip(RoundedCornerShape(100))
+                                                .background(sk.surfaceStrong)
+                                                .padding(horizontal = 7.dp, vertical = 1.dp),
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            fontFamily = IRANSansX,
+                                            color = sk.text
+                                        )
+                                    }
+                                }
+                                if (row.text.isNotEmpty()) {
+                                    Text(
+                                        row.text,
+                                        Modifier.padding(top = 4.dp),
+                                        fontSize = 13.5.sp, lineHeight = 24.sp, fontFamily = IRANSansX,
+                                        color = sk.text, maxLines = 2
                                     )
                                 }
-                                Text(
-                                    text,
-                                    Modifier.padding(top = 4.dp),
-                                    fontSize = 13.5.sp, lineHeight = 24.sp, fontFamily = IRANSansX,
-                                    color = sk.text, maxLines = 2
-                                )
                             }
                             Icon(
                                 SkIcons.ChevronLeft, "باز کردن روز",
@@ -232,12 +326,12 @@ fun NotesSheet(
                 }
             }
 
-            if (notes.isNotEmpty()) {
+            if (rows.isNotEmpty()) {
                 Text(
-                    "${toPersianDigits(filtered.size)} یادداشت",
+                    "${toPersianDigits(filtered.size)} مورد",
                     Modifier.fillMaxWidth().padding(top = 12.dp),
                     fontSize = 11.sp, fontFamily = IRANSansX, color = sk.textFaint,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    textAlign = TextAlign.Center
                 )
             }
         }

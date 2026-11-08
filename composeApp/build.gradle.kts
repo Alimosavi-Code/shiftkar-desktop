@@ -66,7 +66,7 @@ compose.desktop {
                 TargetFormat.Rpm
             )
             packageName = "ShiftKar"
-            packageVersion = "6.2.0"
+            packageVersion = "6.7.3"
             // Pure ASCII for jpackage / Windows WiX / macOS hdiutil compatibility
             description = "ShiftKar Smart Shift Calendar"
             vendor = "Seyed Hossein Mousavi Saeedi"
@@ -90,7 +90,7 @@ compose.desktop {
             }
             linux {
                 packageName = "shiftkar"
-                debMaintainer = "hamyarlearncomsite@gmail.com"
+                debMaintainer = "h.mosavi.s@gmail.com"
                 menuGroup = "Utility"
                 appCategory = "Utility"
                 shortcut = true

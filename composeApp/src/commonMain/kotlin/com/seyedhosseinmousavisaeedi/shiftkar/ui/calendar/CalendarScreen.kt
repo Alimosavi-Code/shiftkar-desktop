@@ -11,7 +11,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -44,6 +46,7 @@ import com.seyedhosseinmousavisaeedi.shiftkar.ui.AppViewModel
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.components.*
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.theme.IRANSansX
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.theme.LocalSk
+import com.seyedhosseinmousavisaeedi.shiftkar.util.ImageExporter
 import com.seyedhosseinmousavisaeedi.shiftkar.util.rememberHaptics
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.components.tourTarget
 
@@ -53,7 +56,11 @@ data class DayInfo(
     val d: Int, val key: String, val holiday: Boolean, val holidayNames: List<String>,
     val occasions: List<String>, val isToday: Boolean, val isFriday: Boolean,
     val weekday: Int, val label: String, val note: String?,
-    val all: Map<ShiftGroup, ShiftCode>
+    val all: Map<ShiftGroup, ShiftCode>,
+    val overtimeHours: Float = 0f,
+    val swapKind: ShiftKind? = null,
+    val colleagueSummary: String = "",
+    val hasColleagueSharedRest: Boolean = false
 )
 
 /* ================= Calendar screen ================= */
@@ -76,8 +83,12 @@ fun CalendarScreen(
     var chipSessionStarted by remember { mutableStateOf(false) }
     var offCount by remember { mutableIntStateOf(0) }
     var selectedKey by remember { mutableStateOf<String?>(null) }
+    var compareGroup by remember { mutableStateOf<ShiftGroup?>(null) }
+    var exportMonthOpen by remember { mutableStateOf(false) }
+    var exportMonthMode by remember { mutableStateOf(s.viewType) }
+    val context: Any? = null
 
-    val today = rememberLiveToday()
+    val today = remember { todayJalaali() }
     val todayKey = remember(today) { makeDateKey(today.jy, today.jm, today.jd) }
     val isCurrentMonth = s.viewYear == today.jy && s.viewMonth == today.jm
 
@@ -118,9 +129,9 @@ fun CalendarScreen(
     fun setFilter(g: GroupFilter) {
         haptic.tick()
         if (g == GroupFilter.ALL) {
-            // «همه» is a VIEW filter only — the personal group in Settings stays untouched
             vm.set { it.copy(filterGroup = GroupFilter.ALL) }
         } else {
+            if (compareGroup == g.toShiftGroup()) compareGroup = null
             vm.set { it.copy(filterGroup = g, myGroup = g) }
         }
     }
@@ -128,10 +139,41 @@ fun CalendarScreen(
     /* ---- month data (shared by grid + table) ---- */
     val monthLen = jalaaliMonthLength(s.viewYear, s.viewMonth)
     val firstWeekday = jalaaliWeekday(s.viewYear, s.viewMonth, 1)
-    val dayInfo = remember(s.viewYear, s.viewMonth, notes, s.showEvents) {
+    val calSyncRev = CalendarSync.revision.collectAsState().value
+    val dayInfo = remember(
+        s.viewYear, s.viewMonth, notes, s.showEvents, s.dayRecords,
+        s.activePatternId, s.customPatterns, s.employees, s.showEmployeesOnCalendar, s.myGroup, calSyncRev
+    ) {
+        val myGrp = s.myGroup.toShiftGroup()
         (1..monthLen).map { d ->
             val key = makeDateKey(s.viewYear, s.viewMonth, d)
             val events = if (s.showEvents) Holidays.getDayEvents(s.viewYear, s.viewMonth, d) else emptyList()
+            val allMap = ShiftEngine.calculateAllShifts(key).associate { it.group to it.code }
+            val myEffKind = s.dayRecords[key]?.swapKind ?: codeToKind(allMap.getValue(myGrp))
+
+            var sharedRestEmp = false
+            val empSummary = if (s.showEmployeesOnCalendar && s.employees.isNotEmpty()) {
+                s.employees.joinToString(" · ") { emp ->
+                    val pat = if (emp.patternId == "ACTIVE") ShiftEngine.resolvePattern(s.activePatternId, s.customPatterns)
+                    else ShiftEngine.resolvePattern(emp.patternId, s.customPatterns)
+                    val eCode = ShiftEngine.getShiftCodeForPattern(key, emp.group, pat)
+                    val eLog = emp.dayLogs[key]
+                    val eKind: ShiftKind? = when (eLog?.status ?: com.seyedhosseinmousavisaeedi.shiftkar.data.EmployeeDayStatus.SCHEDULED) {
+                        com.seyedhosseinmousavisaeedi.shiftkar.data.EmployeeDayStatus.SCHEDULED -> codeToKind(eCode)
+                        com.seyedhosseinmousavisaeedi.shiftkar.data.EmployeeDayStatus.LEAVE -> null
+                        com.seyedhosseinmousavisaeedi.shiftkar.data.EmployeeDayStatus.SWAP_DAY -> ShiftKind.DAY
+                        com.seyedhosseinmousavisaeedi.shiftkar.data.EmployeeDayStatus.SWAP_EVENING -> ShiftKind.EVENING
+                        com.seyedhosseinmousavisaeedi.shiftkar.data.EmployeeDayStatus.SWAP_NIGHT -> ShiftKind.NIGHT
+                        com.seyedhosseinmousavisaeedi.shiftkar.data.EmployeeDayStatus.SWAP_REST -> ShiftKind.REST
+                    }
+                    if (myEffKind == ShiftKind.REST && eKind == ShiftKind.REST) {
+                        sharedRestEmp = true
+                    }
+                    val statusFa = eKind?.let { SHIFT_KIND_FA.getValue(it) } ?: "مرخصی"
+                    "${emp.name}: $statusFa"
+                }
+            } else ""
+
             DayInfo(
                 d = d, key = key,
                 holiday = events.any { it.isHoliday },
@@ -142,7 +184,11 @@ fun CalendarScreen(
                 weekday = jalaaliWeekday(s.viewYear, s.viewMonth, d),
                 label = "${formatWeekday(s.viewYear, s.viewMonth, d)} ${formatJalali(s.viewYear, s.viewMonth, d)}",
                 note = notes[key],
-                all = ShiftEngine.calculateAllShifts(key).associate { it.group to it.code }
+                all = allMap,
+                overtimeHours = s.dayRecords[key]?.overtimeHours ?: 0f,
+                swapKind = s.dayRecords[key]?.swapKind,
+                colleagueSummary = empSummary,
+                hasColleagueSharedRest = sharedRestEmp
             )
         }
     }
@@ -163,7 +209,9 @@ fun CalendarScreen(
          * a correct view and elegant beauty»): بنر «شیفت امروز» به نمای «همه»
          * برگشت — این بار یک کارت شیشه‌ای آراسته با چهار کاشیِ هم‌رنگِ راهنما
          * (کهربایی/نیلی/زمردی) برای گروه‌های A/B/C/D؛ بنر تک‌گروهی هم سر جایش. */
-        if (s.filterGroup != GroupFilter.ALL) {
+        val hasGroups = ShiftEngine.activePattern.hasGroups
+        val effectiveFilterGroup = if (!hasGroups) GroupFilter.A else s.filterGroup
+        if (effectiveFilterGroup != GroupFilter.ALL) {
             TodayBanner(vm, todayKey, onOpenDay)
         } else {
             AllTodayBanner(todayKey, onOpenDay)
@@ -228,42 +276,95 @@ fun CalendarScreen(
 
         /* ---- filter chips + fullscreen + today chip ---- */
         Row(
-            Modifier.fillMaxWidth(),
+            Modifier
+                .fillMaxWidth()
+                .tourTarget("group-filter"),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Row(
-                Modifier.tourTarget("group-filter"),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                GROUP_FILTERS.forEach { g ->
-                    val active = s.filterGroup == g
-                    val label = if (g == GroupFilter.ALL) "همه" else g.toShiftGroup().faLetter() // v2.2.4: حرف فارسی
-                    val skChip = LocalSk.current
-                    Box(
-                        Modifier
-                            .clip(RoundedCornerShape(100))
-                            .then(
-                                if (active) Modifier
+            if (!hasGroups) {
+                val skChip = LocalSk.current
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(100))
+                        .background(skChip.surfaceStrong)
+                        .border(1.5.dp, skChip.primary, RoundedCornerShape(100))
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Text(
+                        "شیفت فردی (بدون گروه)",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = IRANSansX,
+                        color = skChip.primary
+                    )
+                }
+            } else GROUP_FILTERS.forEach { g ->
+                val active = effectiveFilterGroup == g
+                val isCompared = g != GroupFilter.ALL && compareGroup == g.toShiftGroup()
+                val label = if (g == GroupFilter.ALL) "همه" else g.toShiftGroup().faLetter()
+                val skChip = LocalSk.current
+                @OptIn(ExperimentalFoundationApi::class)
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(100))
+                        .then(
+                            when {
+                                active -> Modifier
                                     .background(skChip.surfaceStrong)
                                     .border(1.5.dp, skChip.primary, RoundedCornerShape(100))
-                                else Modifier.glass(RoundedCornerShape(100))
-                            )
-                            .clickableNoRipple { setFilter(g) }
-                            .padding(horizontal = 10.dp, vertical = 8.dp)
-                    ) {
-                        Text(
-                            label,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = IRANSansX,
-                            color = if (active) skChip.primary else skChip.textMuted
+                                isCompared -> Modifier
+                                    .background(skChip.restSoft)
+                                    .border(1.5.dp, skChip.restInk, RoundedCornerShape(100))
+                                else -> Modifier.glass(RoundedCornerShape(100))
+                            }
                         )
-                    }
+                        .combinedClickable(
+                            onClick = { setFilter(g) },
+                            onLongClick = {
+                                if (g != GroupFilter.ALL) {
+                                    haptic.tick(18)
+                                    val baseG = (if (s.filterGroup == GroupFilter.ALL) s.myGroup else s.filterGroup).toShiftGroup()
+                                    val targetG = g.toShiftGroup()
+                                    if (compareGroup == targetG || targetG == baseG) {
+                                        compareGroup = null
+                                        ToastCenter.show("حالت مقایسهٔ دو شیفت غیرفعال شد")
+                                    } else {
+                                        compareGroup = targetG
+                                        ToastCenter.show("مقایسه استراحت مشترک: شیفت ${baseG.faLetter()} و شیفت ${targetG.faLetter()}")
+                                    }
+                                }
+                            }
+                        )
+                        .padding(horizontal = 10.dp, vertical = 8.dp)
+                ) {
+                    Text(
+                        label,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = IRANSansX,
+                        color = when {
+                            active -> skChip.primary
+                            isCompared -> skChip.restInk
+                            else -> skChip.textMuted
+                        }
+                    )
                 }
             }
             Spacer(Modifier.weight(1f))
+            Box(
+                Modifier
+                    .size(36.dp)
+                    .glass(CircleShape)
+                    .clickableNoRipple {
+                        haptic.tick()
+                        exportMonthMode = s.viewType
+                        exportMonthOpen = true
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(SkIcons.Image, "خروجی تصویر ماه", Modifier.size(15.5.dp), tint = LocalSk.current.primary)
+            }
             if (s.viewType == ViewType.TABLE) {
                 Box(
                     Modifier
@@ -307,13 +408,16 @@ fun CalendarScreen(
         }
 
         /* ---- legend (grid + ALL) ---- */
-        if (s.viewType == ViewType.GRID && s.filterGroup == GroupFilter.ALL) {
+        if (s.viewType == ViewType.GRID && effectiveFilterGroup == GroupFilter.ALL) {
             Row(
                 Modifier.padding(top = 8.dp, start = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 LegendDot(LocalSk.current.day, "صبح‌کار")
+                if (ShiftEngine.activePattern.eveningCount > 0) {
+                    LegendDot(LocalSk.current.evening, "عصرکار")
+                }
                 LegendDot(LocalSk.current.night, "شب‌کار")
                 LegendDot(LocalSk.current.rest, "استراحت")
             }
@@ -357,8 +461,8 @@ fun CalendarScreen(
                     )
             ) {
                 when (vt) {
-                    ViewType.GRID -> GridView(dayInfo, firstWeekday, s.filterGroup, todayKey, selectedKey) { k -> selectedKey = k; onOpenDay(k) }
-                    ViewType.TABLE -> TableView(dayInfo, s.filterGroup, onOpenDay)
+                    ViewType.GRID -> GridView(dayInfo, firstWeekday, effectiveFilterGroup, s.myGroup, compareGroup, todayKey, selectedKey) { k -> selectedKey = k; onOpenDay(k) }
+                    ViewType.TABLE -> TableView(dayInfo, effectiveFilterGroup, s.myGroup, onOpenDay)
                 }
             }
         }
@@ -367,11 +471,59 @@ fun CalendarScreen(
     if (tableFs) {
         TableFullscreen(
             viewYear = s.viewYear, viewMonth = s.viewMonth, dayInfo = dayInfo,
-            filterGroup = s.filterGroup, todayKey = todayKey, isCurrentMonth = isCurrentMonth,
+            filterGroup = s.filterGroup, myGroup = s.myGroup, todayKey = todayKey, isCurrentMonth = isCurrentMonth,
             onGoMonth = ::goMonth, onGoToday = ::goToday, onOpenDay = onOpenDay,
-            onOpenPicker = onOpenMonthPicker, onClose = { tableFs = false }
+            onOpenPicker = onOpenMonthPicker,
+            onExportMonth = {
+                exportMonthMode = ViewType.TABLE
+                exportMonthOpen = true
+            },
+            onClose = { tableFs = false }
         )
     }
+
+    val skForExport = LocalSk.current
+    val modeSuffix = if (exportMonthMode == ViewType.TABLE) "table" else "grid"
+    ExportImageDialog(
+        visible = exportMonthOpen,
+        title = "تصویر ${if (exportMonthMode == ViewType.TABLE) "جدول" else "تقویم"} ${JALALI_MONTHS[s.viewMonth - 1]} ${toPersianDigits(s.viewYear)}",
+        fileName = "shiftkar-month-${s.viewYear}-${pad2(s.viewMonth)}-${s.filterGroup.name}-$modeSuffix.png",
+        hapticOn = s.hapticOn,
+        modeKey = exportMonthMode,
+        headerExtra = {
+            SegmentedControl(
+                options = listOf("قالب تقویم", "قالب جدولی"),
+                selectedIndex = if (exportMonthMode == ViewType.GRID) 0 else 1,
+                modifier = Modifier.fillMaxWidth()
+            ) { idx ->
+                haptic.tick()
+                exportMonthMode = if (idx == 0) ViewType.GRID else ViewType.TABLE
+            }
+        },
+        produceBitmap = {
+            if (exportMonthMode == ViewType.TABLE) {
+                ImageExporter.renderMonthTableBitmap(
+                    context = context,
+                    sk = skForExport,
+                    jy = s.viewYear,
+                    jm = s.viewMonth,
+                    filterGroup = s.filterGroup,
+                    dayInfo = dayInfo
+                )
+            } else {
+                ImageExporter.renderMonthBitmap(
+                    context = context,
+                    sk = skForExport,
+                    jy = s.viewYear,
+                    jm = s.viewMonth,
+                    filterGroup = s.filterGroup,
+                    dayInfo = dayInfo,
+                    firstWeekday = firstWeekday
+                )
+            }
+        },
+        onDismiss = { exportMonthOpen = false }
+    )
 }
 
 /* ================= title pill ================= */
@@ -419,7 +571,7 @@ fun TitlePill(text: String, modifier: Modifier = Modifier, onClick: () -> Unit) 
 private fun TodayBanner(vm: AppViewModel, todayKey: String, onOpenDay: (String) -> Unit) {
     val s = vm.settings.collectAsState().value
     val sk = LocalSk.current
-    val today = rememberLiveToday()
+    val today = remember { todayJalaali() }
     val weekday = formatWeekday(today.jy, today.jm, today.jd)
     val dateLine = "$weekday ${toPersianDigits(today.jd)} ${JALALI_MONTHS[today.jm - 1]}"
     val effGroup = s.filterGroup.toShiftGroup()
@@ -434,24 +586,34 @@ private fun TodayBanner(vm: AppViewModel, todayKey: String, onOpenDay: (String) 
     ) {
         Text(dateLine, fontSize = 11.sp, fontFamily = IRANSansX, color = sk.textMuted)
         Spacer(Modifier.height(5.dp))
+        val todayRec = s.dayRecords[todayKey]
+        val isMineGroup = effGroup == s.myGroup.toShiftGroup()
+        val swapped = if (isMineGroup) todayRec?.swapKind else null
+        val ot = if (isMineGroup) (todayRec?.overtimeHours ?: 0f) else 0f
+        val code = ShiftEngine.getShiftCode(todayKey, effGroup)
+        val kind = swapped ?: codeToKind(code)
+        val shiftTitle = buildString {
+            if (swapped != null) append("جابه‌جایی: ${SHIFT_KIND_FA.getValue(swapped)}")
+            else append(CODE_FA.getValue(code))
+            if (ot > 0f) append(" (+${toPersianDigits(ot.toInt())}س)")
+        }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Row(
                 Modifier.weight(1f),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text("شیفت امروز: ", fontSize = 16.sp, fontWeight = FontWeight.ExtraBold, fontFamily = IRANSansX, color = sk.text)
-                GradientText(CODE_FA.getValue(ShiftEngine.getShiftCode(todayKey, effGroup)), fontSize = 16)
+                GradientText(shiftTitle, fontSize = 16)
             }
-            val kind = codeToKind(ShiftEngine.getShiftCode(todayKey, effGroup))
             val kc = kindColors(kind)
             Box(
                 Modifier
                     .size(44.dp)
                     .clip(RoundedCornerShape(13.dp))
-                    .background(kc.bg),
+                    .background(kc.brush),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(kindIcon(kind), CODE_FA.getValue(ShiftEngine.getShiftCode(todayKey, effGroup)), Modifier.size(20.dp), tint = kc.ink)
+                Icon(kindIcon(kind), shiftTitle, Modifier.size(20.dp), tint = kc.ink)
             }
         }
     }
@@ -473,7 +635,7 @@ private fun TodayBanner(vm: AppViewModel, todayKey: String, onOpenDay: (String) 
 @Composable
 private fun AllTodayBanner(todayKey: String, onOpenDay: (String) -> Unit) {
     val sk = LocalSk.current
-    val today = rememberLiveToday()
+    val today = remember { todayJalaali() }
     val weekday = formatWeekday(today.jy, today.jm, today.jd)
     val dateLine = "$weekday ${toPersianDigits(today.jd)} ${JALALI_MONTHS[today.jm - 1]}"
 
@@ -518,7 +680,7 @@ private fun AllTodayBanner(todayKey: String, onOpenDay: (String) -> Unit) {
                     Modifier
                         .weight(1f)
                         .clip(RoundedCornerShape(13.dp))
-                        .background(kc.bg)
+                        .background(kc.brush)
                         .padding(vertical = 8.dp, horizontal = 2.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
@@ -549,57 +711,161 @@ fun GridView(
     dayInfo: List<DayInfo>,
     firstWeekday: Int,
     filterGroup: GroupFilter,
+    myGroup: GroupFilter,
+    compareGroup: ShiftGroup? = null,
     todayKey: String,
     selectedKey: String?,
     onOpenDay: (String) -> Unit
 ) {
     val sk = LocalSk.current
+    val cells: List<DayInfo?> = List(firstWeekday) { null } + dayInfo
+    val rows = (cells.size + 6) / 7
+
+    /* واکنش‌گرا بر اساس ارتفاع واقعیِ بالای نوار شناور پایین:
+     * چه ماه ۵ ردیفه باشد چه ۶ ردیفه، و چه در نمای تک‌گروهی باشیم چه «همه»
+     * (که ردیف راهنمای رنگ‌ها را هم بالای تقویم دارد)، ارتفاع سلول‌ها طوری
+     * تنظیم می‌شود که تقویم و نوار خلاصهٔ ماه کاملاً بالای نوار پایین جا شوند
+     * و هرگز زیر نوار ناوبری نروند. */
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        val screenH = maxHeight.value
-        val cellH = ((screenH * 0.084f).coerceIn(52f, 66f)).dp
+        val navClearance = 78.dp
+        val headerAndGaps = 22.dp + 4.dp * (rows - 1)
+        val summaryReserved = 48.dp
+        val availForGrid = (maxHeight - navClearance - headerAndGaps - summaryReserved).coerceAtLeast(220.dp)
+        val minCell = 38.dp
+        val cellH = (availForGrid / rows).coerceIn(minCell, 68.dp)
 
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-        Row(Modifier.fillMaxWidth()) {
-            WEEKDAY_SHORT.forEachIndexed { i, w ->
-                Text(
-                    w,
-                    Modifier.weight(1f),
-                    textAlign = TextAlign.Center,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = IRANSansX,
-                    color = if (i == 6) sk.holiday else sk.textFaint
-                )
+            Row(Modifier.fillMaxWidth()) {
+                WEEKDAY_SHORT.forEachIndexed { i, w ->
+                    Text(
+                        w,
+                        Modifier.weight(1f),
+                        textAlign = TextAlign.Center,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = IRANSansX,
+                        color = if (i == 6) sk.textMuted else sk.textFaint
+                    )
+                }
             }
-        }
-        Spacer(Modifier.height(4.dp))
-        val cells: List<DayInfo?> = List(firstWeekday) { null } + dayInfo
-        val rows = (cells.size + 6) / 7
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            for (r in 0 until rows) {
-                Row(Modifier.fillMaxWidth().height(cellH), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    for (c in 0 until 7) {
-                        val info = cells.getOrNull(r * 7 + c)
-                        if (info == null) {
-                            Box(Modifier.weight(1f).fillMaxHeight())
-                        } else {
-                            DayCell(
-                                info = info, filterGroup = filterGroup,
-                                isSelected = selectedKey == info.key,
-                                onOpenDay = onOpenDay,
-                                /* v2.2.3: تأخیر پلکانی ورود — دقیقاً فرمول PWA */
-                                introDelayMs = kotlin.math.min((info.d + 3) * 6, 200),
-                                modifier = Modifier.weight(1f).fillMaxHeight()
-                            )
+            Spacer(Modifier.height(4.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                for (r in 0 until rows) {
+                    Row(Modifier.fillMaxWidth().height(cellH), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        for (c in 0 until 7) {
+                            val info = cells.getOrNull(r * 7 + c)
+                            if (info == null) {
+                                Box(Modifier.weight(1f).fillMaxHeight())
+                            } else {
+                                val isTourCell = info.isToday || (dayInfo.none { it.isToday } && info.d == 14)
+                                DayCell(
+                                    info = info,
+                                    filterGroup = filterGroup,
+                                    myGroup = myGroup,
+                                    compareGroup = compareGroup,
+                                    isSelected = selectedKey == info.key,
+                                    onOpenDay = onOpenDay,
+                                    introDelayMs = kotlin.math.min((info.d + 3) * 6, 200),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxHeight()
+                                        .then(if (isTourCell) Modifier.tourTarget("today-cell") else Modifier)
+                                )
+                            }
                         }
                     }
                 }
             }
+            Spacer(Modifier.height(6.dp))
+            val summaryGroup = if (filterGroup == GroupFilter.ALL) myGroup.toShiftGroup() else filterGroup.toShiftGroup()
+            MonthlySummaryStrip(dayInfo = dayInfo, effGroup = summaryGroup, myGroup = myGroup.toShiftGroup(), compareGroup = compareGroup)
+            Spacer(Modifier.height(navClearance))
         }
-        /* v6.0.3 (مالک: «fixing the bottom bar interfere with other element»):
-         * فاصلهٔ انتهایی اسکرول از ۸ به ۸۸dp — نوار شیشه‌ای شناور ~۸۸dp بالای
-         * لبهٔ امن می‌نشیند؛ با ۸dp آخرین ردیف تقویم همیشه پشت نوار گیر می‌کرد. */
-        Spacer(Modifier.height(88.dp))
+    }
+}
+
+/**
+ * نوار واکنش‌گرای خلاصهٔ شیفت ماه — تک‌خطی و خوش‌فرم تا در ماه‌های ۶ ردیفه و
+ * نمای «همه» هرگز زیر نوار ناوبری پایین نرود.
+ */
+@Composable
+private fun MonthlySummaryStrip(
+    dayInfo: List<DayInfo>,
+    effGroup: ShiftGroup,
+    myGroup: ShiftGroup = effGroup,
+    compareGroup: ShiftGroup? = null
+) {
+    val sk = LocalSk.current
+    val counts = remember(dayInfo, effGroup, myGroup, compareGroup) {
+        var day = 0
+        var evening = 0
+        var night = 0
+        var officialHolidays = 0
+        var rest = 0
+        var sharedRest = 0
+        dayInfo.forEach { info ->
+            if (info.holiday) officialHolidays++
+            val k = if (effGroup == myGroup && info.swapKind != null) info.swapKind else codeToKind(info.all.getValue(effGroup))
+            when (k) {
+                ShiftKind.DAY -> day++
+                ShiftKind.EVENING -> evening++
+                ShiftKind.NIGHT -> night++
+                ShiftKind.REST -> rest++
+            }
+            if (compareGroup != null) {
+                val k2 = codeToKind(info.all.getValue(compareGroup))
+                if (k == ShiftKind.REST && k2 == ShiftKind.REST) sharedRest++
+            }
+        }
+        intArrayOf(day, evening, night, officialHolidays, rest, sharedRest)
+    }
+
+    val restLabel = if (compareGroup != null) "مشترک ${effGroup.faLetter()}∩${compareGroup.faLetter()}" else "استراحت"
+    val restValue = if (compareGroup != null) counts[5] else counts[4]
+
+    val items = buildList {
+        add(Triple("صبح‌کار", counts[0], Triple(sk.daySoft, sk.dayInk, SkIcons.Sun)))
+        if (counts[1] > 0) {
+            add(Triple("عصرکار", counts[1], Triple(sk.eveningSoft, sk.eveningInk, SkIcons.Sunset)))
+        }
+        add(Triple("شب‌کار", counts[2], Triple(sk.nightSoft, sk.nightInk, SkIcons.Moon)))
+        add(Triple("تعطیل", counts[3], Triple(sk.holidaySoft, sk.holiday, SkIcons.Holiday)))
+        add(Triple(restLabel, restValue, Triple(sk.restSoft, sk.restInk, SkIcons.Rest)))
+    }
+
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .tourTarget("summary-strip")
+            .glass(RoundedCornerShape(14.dp))
+            .padding(horizontal = 6.dp, vertical = 5.dp),
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        items.forEach { (label, count, style) ->
+            val (bg, ink, icon) = style
+            Row(
+                Modifier
+                    .weight(1f)
+                    .height(30.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(bg)
+                    .padding(horizontal = 4.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(icon, null, Modifier.size(12.dp), tint = ink)
+                Text(
+                    "$label ${toPersianDigits(count)}",
+                    Modifier.padding(start = 4.dp),
+                    fontSize = 10.5.sp,
+                    lineHeight = 12.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontFamily = IRANSansX,
+                    color = ink,
+                    maxLines = 1
+                )
+            }
         }
     }
 }
@@ -608,15 +874,24 @@ fun GridView(
 private fun DayCell(
     info: DayInfo,
     filterGroup: GroupFilter,
+    myGroup: GroupFilter = filterGroup,
+    compareGroup: ShiftGroup? = null,
     isSelected: Boolean,
     onOpenDay: (String) -> Unit,
     introDelayMs: Int = 0,
     modifier: Modifier = Modifier
 ) {
     val sk = LocalSk.current
-    val holiday = info.holiday || info.isFriday
-    val effGroup = if (filterGroup == GroupFilter.ALL) GroupFilter.A else filterGroup
-    val kind = codeToKind(info.all.getValue(effGroup.toShiftGroup()))
+    val holiday = info.holiday
+    val effShiftGroup = (if (filterGroup == GroupFilter.ALL) myGroup else filterGroup).toShiftGroup()
+    val kind = if (effShiftGroup == myGroup.toShiftGroup() && info.swapKind != null) {
+        info.swapKind
+    } else {
+        codeToKind(info.all.getValue(effShiftGroup))
+    }
+    val isSharedRest = compareGroup != null &&
+        kind == ShiftKind.REST &&
+        codeToKind(info.all.getValue(compareGroup)) == ShiftKind.REST
 
     /* v2.2.3: ورود پلکانی سلول‌ها هنگام تعویض ماه — پاریتی PWA (sk-cell-in):
      * فقط opacity (بدون transform تا پس‌زمینهٔ شیشه‌ای دچار پرش نشود)،
@@ -642,9 +917,12 @@ private fun DayCell(
                 else Modifier.skTile(shape)
             )
             .then(
-                if (info.isToday) Modifier.border(2.dp, sk.primary, shape)
-                else if (isSelected) Modifier.border(2.dp, sk.primary.copy(alpha = 0.4f), shape)
-                else Modifier
+                when {
+                    info.isToday -> Modifier.border(2.dp, sk.primary, shape)
+                    isSharedRest -> Modifier.border(1.8.dp, sk.restInk, shape)
+                    isSelected -> Modifier.border(2.dp, sk.primary.copy(alpha = 0.4f), shape)
+                    else -> Modifier
+                }
             )
             .clickableNoRipple { onOpenDay(info.key) }
             .padding(2.dp),
@@ -657,19 +935,30 @@ private fun DayCell(
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = IRANSansX,
-                color = if (holiday) sk.holiday else sk.text
+                color = when {
+                    holiday -> sk.holiday
+                    info.isFriday -> sk.textMuted
+                    else -> sk.text
+                }
             )
             if (info.note != null) {
-                Box(Modifier.size(4.dp).clip(CircleShape).background(sk.noteInk))
+                Box(Modifier.size(4.dp).clip(CircleShape).background(sk.primary))
+            }
+            if (info.overtimeHours > 0f || info.swapKind != null) {
+                Box(Modifier.size(4.dp).clip(CircleShape).background(sk.primary))
+            }
+            if (info.hasColleagueSharedRest) {
+                Box(Modifier.size(4.dp).clip(CircleShape).background(sk.restInk))
             }
         }
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(if (filterGroup == GroupFilter.ALL) 2.dp else 4.dp))
         if (filterGroup == GroupFilter.ALL) {
             /* شبکهٔ ۲×۲ نشان‌های عددی — هر چهار گروه (A,B / C,D در ترتیب راست‌به‌چپ)
              * داخل عرض سلول جا می‌شوند؛ قبلاً ۴ حرف در یک ردیف جا نمی‌شد و گروه
              * D از عرض بیرون می‌زد (گزارش «اعداد در سلول‌ها ناقص‌اند»). */
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                GROUPS.chunked(2).forEach { rowGroups ->
+            val colsPerRow = if (GROUPS.size > 4) 3 else 2
+            Column(verticalArrangement = Arrangement.spacedBy(1.5.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                GROUPS.take(6).chunked(colsPerRow).forEach { rowGroups ->
                     Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                         rowGroups.forEach { g ->
                             GroupNumBadge(g, info.all.getValue(g))
@@ -678,30 +967,67 @@ private fun DayCell(
                 }
             }
         } else {
-            val kc = kindColors(kind)
-            Box(
-                Modifier
-                    .size(19.dp)
-                    .clip(RoundedCornerShape(7.dp))
-                    .background(kc.bg),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(kindIcon(kind, 13), null, Modifier.size(13.dp), tint = kc.ink)
-            }
+            val cellCode = info.all.getValue(effShiftGroup)
+            val isSwapped = effShiftGroup == myGroup.toShiftGroup() && info.swapKind != null
+            ShiftDayOrdinalBadge(
+                kind = kind,
+                ordinal = shiftCodeIndex(cellCode),
+                isSwapped = isSwapped
+            )
         }
     }
 }
 
-/* ================= table (Desktop Full-Width Vertical Scroll) ================= */
+/* ================= table ================= */
+
+/**
+ * v6.0.0 (مالک: «make horizontally scrolling work on the table view and the
+ * full screen table view»): عرض جدول = عرض واقعیِ بلندترین متنِ «مناسبت و
+ * یادداشت» + ستون‌های ثابت. سطرها تک‌خطی می‌مانند و متن بلند با کشیدن افقی
+ * خوانده می‌شود — حداقل عرض ۴۸۰dp.
+ */
+@Composable
+private fun rememberTableWidth(dayInfo: List<DayInfo>): Dp {
+    val tm = rememberTextMeasurer()
+    val density = LocalDensity.current
+    return remember(dayInfo, density) {
+        val noteStyle = TextStyle(fontSize = 11.5.sp, fontFamily = IRANSansX)
+        var maxPx = 0f
+        dayInfo.forEach { info ->
+            val h = info.holidayNames.joinToString("، ")
+            if (h.isNotEmpty()) {
+                maxPx = maxOf(maxPx, tm.measure(h, noteStyle.copy(fontWeight = FontWeight.Bold)).size.width.toFloat())
+            }
+            val occ = info.occasions.joinToString("، ")
+            if (occ.isNotEmpty()) {
+                maxPx = maxOf(maxPx, tm.measure(occ, noteStyle).size.width.toFloat())
+            }
+            if (info.overtimeHours > 0f || info.swapKind != null) {
+                val recStr = buildList {
+                    if (info.overtimeHours > 0f) add("اضافه‌کاری: ${toPersianDigits(info.overtimeHours.toInt())} ساعت")
+                    if (info.swapKind != null) add("جابه‌جایی: ${SHIFT_KIND_FA.getValue(info.swapKind)}")
+                }.joinToString(" · ")
+                maxPx = maxOf(maxPx, tm.measure(recStr, noteStyle.copy(fontWeight = FontWeight.Bold)).size.width.toFloat())
+            }
+            info.note?.let { n ->
+                maxPx = maxOf(maxPx, tm.measure(n, noteStyle).size.width.toFloat())
+            }
+        }
+        val noteW = with(density) { maxPx.toDp() }
+        (48 + 64 + 96 + 12 + 8).dp + noteW + 24.dp
+    }.coerceAtLeast(480.dp)
+}
 
 @Composable
 fun TableView(
     dayInfo: List<DayInfo>,
     filterGroup: GroupFilter,
+    myGroup: GroupFilter = filterGroup,
     onOpenDay: (String) -> Unit
 ) {
     val sk = LocalSk.current
     val all = filterGroup == GroupFilter.ALL
+    val tableW = rememberTableWidth(dayInfo)
 
     Column(
         Modifier
@@ -711,111 +1037,163 @@ fun TableView(
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             if (all) {
                 LegendDot(sk.day, "صبح‌کار")
+                if (ShiftEngine.activePattern.eveningCount > 0) {
+                    LegendDot(sk.evening, "عصرکار")
+                }
                 LegendDot(sk.night, "شب‌کار")
                 LegendDot(sk.rest, "استراحت")
             } else {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Icon(SkIcons.Info, null, Modifier.size(13.dp), tint = sk.textFaint)
-                    Text("برای مشاهدهٔ جزئیات و ثبت یادداشت، روی هر روز کلیک کنید", fontSize = 11.5.sp, fontFamily = IRANSansX, color = sk.textFaint)
+                    Text("برای جزئیات، روی هر روز ضربه بزنید", fontSize = 11.5.sp, fontFamily = IRANSansX, color = sk.textFaint)
                 }
             }
         }
-
-        // Full-width sticky header
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .background(sk.glassHi)
-                .padding(vertical = 9.dp, horizontal = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("روز", Modifier.width(64.dp), textAlign = TextAlign.Center, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = IRANSansX, color = sk.textFaint)
-            Text("روز هفته", Modifier.width(96.dp), textAlign = TextAlign.Center, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = IRANSansX, color = sk.textFaint)
-            Text(if (all) "شیفت گروه‌ها" else "وضعیت شیفت", Modifier.width(148.dp), textAlign = TextAlign.Center, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = IRANSansX, color = sk.textFaint)
-            Text("مناسبت‌ها و یادداشت روزانه", Modifier.weight(1f).padding(start = 16.dp), fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = IRANSansX, color = sk.textFaint)
-        }
-
-        // Pure vertical LazyColumn — smooth mouse wheel scrolling without horizontal scroll interference
-        LazyColumn(
-            Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 88.dp)
-        ) {
-            items(dayInfo.size) { i ->
-                val info = dayInfo[i]
-                val holiday = info.holiday || info.isFriday
-                val effGroup = if (all) GroupFilter.A else filterGroup
-                val code = info.all.getValue(effGroup.toShiftGroup())
-                val kind = codeToKind(code)
-                val kc = kindColors(kind)
+        /* v6.0.0: اسکرول افقی — سرستون و ردیف‌ها با هم می‌لغزند */
+        Box(Modifier.fillMaxSize().horizontalScroll(rememberScrollState())) {
+            Column {
+                // header
+                val headerBg = sk.glassHi
                 Row(
                     Modifier
-                        .fillMaxWidth()
-                        .then(if (holiday) Modifier.background(sk.holidaySoft.copy(alpha = 0.6f)) else Modifier)
-                        .then(if (info.isToday) Modifier.background(sk.primarySoft) else Modifier)
-                        .clickableNoRipple { onOpenDay(info.key) }
-                        .padding(vertical = 10.dp, horizontal = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .width(tableW)
+                        .background(headerBg)
+                        .padding(vertical = 8.dp)
                 ) {
-                    Text(
-                        toPersianDigits(info.d.toString().padStart(2, '۰')),
-                        Modifier.width(64.dp), textAlign = TextAlign.Center,
-                        fontSize = 13.5.sp, fontWeight = FontWeight.Bold, fontFamily = IRANSansX,
-                        color = when {
-                            info.isToday -> sk.primary
-                            holiday -> sk.holiday
-                            else -> sk.text
-                        }
-                    )
-                    Text(
-                        WEEKDAYS[info.weekday],
-                        Modifier.width(96.dp), textAlign = TextAlign.Center,
-                        fontSize = 12.5.sp, fontFamily = IRANSansX,
-                        color = if (holiday) sk.holiday else sk.textMuted
-                    )
-                    Box(Modifier.width(148.dp), contentAlignment = Alignment.Center) {
-                        if (all) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                GROUPS.forEach { g -> MiniBadge(g, codeToKind(info.all.getValue(g))) }
-                            }
-                        } else {
-                            Box(
-                                Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(kc.bg)
-                                    .padding(horizontal = 10.dp, vertical = 4.dp)
-                            ) {
-                                Text(
-                                    "${CODE_FA.getValue(code)} (${code.name})",
-                                    fontSize = 11.sp, fontWeight = FontWeight.Black, fontFamily = IRANSansX, color = kc.ink
+                    Text("روز", Modifier.width(48.dp), textAlign = TextAlign.Center, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = IRANSansX, color = sk.textFaint)
+                    Text("هفته", Modifier.width(64.dp), textAlign = TextAlign.Center, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = IRANSansX, color = sk.textFaint)
+                    Text(if (all) "شیفت گروه‌ها" else "شیفت", Modifier.width(96.dp), textAlign = TextAlign.Center, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = IRANSansX, color = sk.textFaint)
+                    Text("مناسبت و یادداشت", Modifier.weight(1f).padding(start = 12.dp), fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = IRANSansX, color = sk.textFaint)
+                }
+                /* v6.0.3: هم‌ترازِ GridView — آخرین ردیف جدول هم باید بتواند از
+                 * زیر نوار شیشه‌ای پایین رد شود (contentPadding = 88dp). */
+                LazyColumn(
+                    Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = 88.dp)
+                ) {
+                    items(dayInfo.size) { i ->
+                        val info = dayInfo[i]
+                        val holiday = info.holiday
+                        val effShiftGroup = (if (all) myGroup else filterGroup).toShiftGroup()
+                        val isMineSelected = effShiftGroup == myGroup.toShiftGroup()
+                        val swappedKind = if (isMineSelected) info.swapKind else null
+                        val kind = swappedKind ?: codeToKind(info.all.getValue(effShiftGroup))
+                        val kc = kindColors(kind)
+                        Row(
+                            Modifier
+                                .width(tableW)
+                                .then(when {
+                                    holiday -> Modifier.background(sk.holidaySoft.copy(alpha = 0.6f))
+                                    info.isFriday -> Modifier.background(sk.surfaceStrong.copy(alpha = 0.35f))
+                                    else -> Modifier
+                                })
+                                .then(
+                                    if (info.isToday) Modifier.background(sk.primarySoft)
+                                    else Modifier
                                 )
+                                .clickableNoRipple { onOpenDay(info.key) }
+                                .padding(vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                toPersianDigits(info.d.toString().padStart(2, '۰')),
+                                Modifier.width(48.dp), textAlign = TextAlign.Center,
+                                fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = IRANSansX,
+                                color = when {
+                                    info.isToday -> sk.primary
+                                    holiday -> sk.holiday
+                                    else -> sk.text
+                                }
+                            )
+                            Text(
+                                WEEKDAYS[info.weekday],
+                                Modifier.width(64.dp), textAlign = TextAlign.Center,
+                                fontSize = 12.sp, fontFamily = IRANSansX,
+                                color = if (holiday) sk.holiday else sk.textMuted
+                            )
+                            Box(Modifier.width(96.dp), contentAlignment = Alignment.Center) {
+                                if (all) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                                        GROUPS.forEach { g ->
+                                            val gKind = if (g == myGroup.toShiftGroup() && info.swapKind != null) info.swapKind else codeToKind(info.all.getValue(g))
+                                            MiniBadge(g, gKind)
+                                        }
+                                    }
+                                } else {
+                                    val badgeText = when (swappedKind) {
+                                        ShiftKind.DAY -> "صبح‌کار*"
+                                        ShiftKind.EVENING -> "عصرکار*"
+                                        ShiftKind.NIGHT -> "شب‌کار*"
+                                        ShiftKind.REST -> "استراحت*"
+                                        null -> CODE_NUM_FA.getValue(info.all.getValue(effShiftGroup))
+                                    }
+                                    Box(
+                                        Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(kc.brush)
+                                            .padding(horizontal = 6.dp, vertical = 3.dp)
+                                    ) {
+                                        Text(
+                                            badgeText,
+                                            fontSize = 10.5.sp, fontWeight = FontWeight.Black, fontFamily = IRANSansX, color = kc.ink
+                                        )
+                                    }
+                                }
                             }
-                        }
-                    }
-                    Column(Modifier.weight(1f).padding(start = 16.dp, end = 12.dp)) {
-                        if (info.holidayNames.isNotEmpty()) {
-                            Text(
-                                info.holidayNames.joinToString("، "),
-                                fontSize = 12.sp, lineHeight = 20.sp, fontWeight = FontWeight.Bold, fontFamily = IRANSansX,
-                                color = sk.holiday,
-                                maxLines = 2, softWrap = true
-                            )
-                        }
-                        if (info.note != null) {
-                            Text(
-                                info.note,
-                                fontSize = 12.sp, lineHeight = 20.sp, fontFamily = IRANSansX,
-                                color = sk.textMuted,
-                                maxLines = 2, softWrap = true
-                            )
-                        }
-                        if (info.holidayNames.isEmpty() && info.note == null) {
-                            Text("—", fontSize = 11.5.sp, fontFamily = IRANSansX, color = sk.textFaint)
+                            Column(Modifier.weight(1f).padding(start = 12.dp, end = 8.dp)) {
+                                if (info.overtimeHours > 0f || info.swapKind != null) {
+                                    val recLine = buildList {
+                                        if (info.overtimeHours > 0f) add("اضافه‌کاری: ${toPersianDigits(info.overtimeHours.toInt())} ساعت")
+                                        if (info.swapKind != null) add("جابه‌جایی: ${SHIFT_KIND_FA.getValue(info.swapKind)}")
+                                    }.joinToString(" · ")
+                                    Text(
+                                        recLine,
+                                        fontSize = 11.5.sp, fontWeight = FontWeight.Bold, fontFamily = IRANSansX,
+                                        color = sk.primary,
+                                        maxLines = 1, softWrap = false
+                                    )
+                                }
+                                if (info.holidayNames.isNotEmpty()) {
+                                    Text(
+                                        info.holidayNames.joinToString("، "),
+                                        fontSize = 11.5.sp, fontWeight = FontWeight.Bold, fontFamily = IRANSansX,
+                                        color = sk.holiday,
+                                        maxLines = 1, softWrap = false
+                                    )
+                                }
+                                if (info.occasions.isNotEmpty()) {
+                                    Text(
+                                        info.occasions.joinToString("، "),
+                                        fontSize = 11.sp, fontFamily = IRANSansX,
+                                        color = sk.textMuted,
+                                        maxLines = 1, softWrap = false
+                                    )
+                                }
+                                if (info.colleagueSummary.isNotEmpty()) {
+                                    Text(
+                                        "همکاران: ${info.colleagueSummary}",
+                                        fontSize = 10.5.sp, fontWeight = FontWeight.Bold, fontFamily = IRANSansX,
+                                        color = sk.restInk,
+                                        maxLines = 1, softWrap = false
+                                    )
+                                }
+                                if (info.note != null) {
+                                    Text(
+                                        info.note,
+                                        fontSize = 11.5.sp, fontFamily = IRANSansX,
+                                        color = sk.textMuted,
+                                        maxLines = 1, softWrap = false
+                                    )
+                                }
+                                if (info.overtimeHours <= 0f && info.swapKind == null && info.holidayNames.isEmpty() && info.occasions.isEmpty() && info.note == null && info.colleagueSummary.isEmpty()) {
+                                    Text("—", fontSize = 11.5.sp, fontFamily = IRANSansX, color = sk.textFaint)
+                                }
+                            }
                         }
                     }
                 }
@@ -837,12 +1215,14 @@ fun LegendDot(color: Color, label: String) {
 @Composable
 private fun TableFullscreen(
     viewYear: Int, viewMonth: Int, dayInfo: List<DayInfo>, filterGroup: GroupFilter,
-    todayKey: String, isCurrentMonth: Boolean,
+    myGroup: GroupFilter = filterGroup, todayKey: String, isCurrentMonth: Boolean,
     onGoMonth: (Int) -> Unit, onGoToday: () -> Unit, onOpenDay: (String) -> Unit,
-    onOpenPicker: () -> Unit, onClose: () -> Unit
+    onOpenPicker: () -> Unit, onExportMonth: () -> Unit, onClose: () -> Unit
 ) {
     val sk = LocalSk.current
     val all = filterGroup == GroupFilter.ALL
+    val tableW = rememberTableWidth(dayInfo)
+
 
     Box(Modifier.fillMaxSize().background(sk.background)) {
         AuroraBackground(Modifier.fillMaxSize())
@@ -853,7 +1233,31 @@ private fun TableFullscreen(
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp)
                     .glass(RoundedCornerShape(16.dp))
-                    .padding(6.dp),
+                    .padding(6.dp)
+                    /* v2.2.9: کشیدن افقی روی «عنوان» برای تعویض ماه — v6.0.0:
+                     * محتوای جدول هم اسکرول افقی خودش را دارد. */
+                    .then(
+                        Modifier.pointerInput(viewYear, viewMonth) {
+                            var totalX = 0f
+                            var totalY = 0f
+                            val threshold = 48.dp.toPx()
+                            detectDragGestures(
+                                onDragStart = { totalX = 0f; totalY = 0f },
+                                onDragEnd = {
+                                    if (kotlin.math.abs(totalX) > threshold &&
+                                        kotlin.math.abs(totalX) > kotlin.math.abs(totalY) * 1.4f
+                                    ) {
+                                        onGoMonth(if (totalX > 0) 1 else -1)
+                                    }
+                                },
+                                onDragCancel = { totalX = 0f; totalY = 0f }
+                            ) { change, dragAmount ->
+                                change.consume()
+                                totalX += dragAmount.x
+                                totalY += dragAmount.y
+                            }
+                        }
+                    ),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
@@ -862,6 +1266,7 @@ private fun TableFullscreen(
                     TitlePill("${JALALI_MONTHS[viewMonth - 1]} ${toPersianDigits(viewYear)}") { onOpenPicker() }
                 }
                 SkIconButton(SkIcons.ChevronLeft, "ماه بعد", iconSize = 18) { onGoMonth(1) }
+                SkIconButton(SkIcons.Image, "خروجی تصویر ماه", iconSize = 17, tint = sk.primary) { onExportMonth() }
                 SkIconButton(SkIcons.Collapse, "بازگشت به نمای تقویم", iconSize = 17, tint = sk.primary) { onClose() }
             }
 
@@ -872,6 +1277,10 @@ private fun TableFullscreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     LegendDot(sk.day, "صبح‌کار")
+                    if (ShiftEngine.activePattern.eveningCount > 0) {
+                        Spacer(Modifier.width(16.dp))
+                        LegendDot(sk.evening, "عصرکار")
+                    }
                     Spacer(Modifier.width(16.dp))
                     LegendDot(sk.night, "شب‌کار")
                     Spacer(Modifier.width(16.dp))
@@ -881,96 +1290,136 @@ private fun TableFullscreen(
 
             Spacer(Modifier.height(8.dp))
 
+            /* v6.0.0 (مالک: «make horizontally scrolling work on the full
+             * screen table view»): سرستون + ردیف‌ها داخل اسکرول افقی؛ سطرها
+             * تک‌خطی و متن بلند با کشیدن قابل خواندن. */
             Column(
                 Modifier
                     .weight(1f)
-                    .fillMaxWidth()
                     .padding(horizontal = 16.dp)
                     .cardSoft(RoundedCornerShape(16.dp))
             ) {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .background(sk.glassHi)
-                        .padding(vertical = 10.dp, horizontal = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("روز", Modifier.width(64.dp), textAlign = TextAlign.Center, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = IRANSansX, color = sk.textFaint)
-                    Text("روز هفته", Modifier.width(96.dp), textAlign = TextAlign.Center, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = IRANSansX, color = sk.textFaint)
-                    Text(if (all) "شیفت گروه‌ها" else "وضعیت شیفت", Modifier.width(148.dp), textAlign = TextAlign.Center, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = IRANSansX, color = sk.textFaint)
-                    Text("مناسبت‌ها و یادداشت روزانه", Modifier.weight(1f).padding(start = 16.dp), fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = IRANSansX, color = sk.textFaint)
-                }
-                LazyColumn(Modifier.fillMaxSize()) {
-                    items(dayInfo.size) { i ->
-                        val info = dayInfo[i]
-                        val holiday = info.holiday || info.isFriday
-                        val effGroup = if (all) GroupFilter.A else filterGroup
-                        val code = info.all.getValue(effGroup.toShiftGroup())
-                        val kind = codeToKind(code)
-                        val kc = kindColors(kind)
+                Box(Modifier.fillMaxSize().horizontalScroll(rememberScrollState())) {
+                    Column {
                         Row(
                             Modifier
-                                .fillMaxWidth()
-                                .then(if (holiday) Modifier.background(sk.holidaySoft.copy(alpha = 0.6f)) else Modifier)
-                                .then(if (info.isToday) Modifier.background(sk.primarySoft) else Modifier)
-                                .clickableNoRipple { onOpenDay(info.key) }
-                                .padding(vertical = 10.dp, horizontal = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                                .width(tableW)
+                                .background(sk.glassHi)
+                                .padding(vertical = 10.dp)
                         ) {
-                            Text(
-                                toPersianDigits(info.d.toString().padStart(2, '۰')),
-                                Modifier.width(64.dp), textAlign = TextAlign.Center,
-                                fontSize = 13.5.sp, fontWeight = FontWeight.Bold, fontFamily = IRANSansX,
-                                color = when {
-                                    info.isToday -> sk.primary
-                                    holiday -> sk.holiday
-                                    else -> sk.text
-                                }
-                            )
-                            Text(
-                                WEEKDAYS[info.weekday],
-                                Modifier.width(96.dp), textAlign = TextAlign.Center,
-                                fontSize = 12.5.sp, fontFamily = IRANSansX,
-                                color = if (holiday) sk.holiday else sk.textMuted
-                            )
-                            Box(Modifier.width(148.dp), contentAlignment = Alignment.Center) {
-                                if (all) {
-                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        GROUPS.forEach { g -> MiniBadge(g, codeToKind(info.all.getValue(g))) }
-                                    }
-                                } else {
-                                    Box(
-                                        Modifier
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .background(kc.bg)
-                                            .padding(horizontal = 10.dp, vertical = 4.dp)
-                                    ) {
-                                        Text(
-                                            "${CODE_FA.getValue(code)} (${code.name})",
-                                            fontSize = 11.sp, fontWeight = FontWeight.Black, fontFamily = IRANSansX, color = kc.ink
-                                        )
-                                    }
-                                }
-                            }
-                            Column(Modifier.weight(1f).padding(start = 16.dp, end = 12.dp)) {
-                                if (info.holidayNames.isNotEmpty()) {
+                            Text("روز", Modifier.width(48.dp), textAlign = TextAlign.Center, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = IRANSansX, color = sk.textFaint)
+                            Text("هفته", Modifier.width(64.dp), textAlign = TextAlign.Center, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = IRANSansX, color = sk.textFaint)
+                            Text(if (all) "شیفت گروه‌ها" else "شیفت", Modifier.width(96.dp), textAlign = TextAlign.Center, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = IRANSansX, color = sk.textFaint)
+                            Text("مناسبت و یادداشت", Modifier.weight(1f).padding(start = 12.dp), fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = IRANSansX, color = sk.textFaint)
+                        }
+                        LazyColumn(Modifier.fillMaxSize()) {
+                            items(dayInfo.size) { i ->
+                                val info = dayInfo[i]
+                                val holiday = info.holiday
+                                val effShiftGroup = (if (all) myGroup else filterGroup).toShiftGroup()
+                                val isMineSelected = effShiftGroup == myGroup.toShiftGroup()
+                                val swappedKind = if (isMineSelected) info.swapKind else null
+                                val kind = swappedKind ?: codeToKind(info.all.getValue(effShiftGroup))
+                                val kc = kindColors(kind)
+                                Row(
+                                    Modifier
+                                        .width(tableW)
+                                        .then(when {
+                                    holiday -> Modifier.background(sk.holidaySoft.copy(alpha = 0.6f))
+                                    info.isFriday -> Modifier.background(sk.surfaceStrong.copy(alpha = 0.35f))
+                                    else -> Modifier
+                                })
+                                        .then(if (info.isToday) Modifier.background(sk.primarySoft) else Modifier)
+                                        .clickableNoRipple { onOpenDay(info.key) }
+                                        .padding(vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
                                     Text(
-                                        info.holidayNames.joinToString("، "),
-                                        fontSize = 12.sp, lineHeight = 20.sp, fontWeight = FontWeight.Bold, fontFamily = IRANSansX,
-                                        color = sk.holiday,
-                                        maxLines = 3, softWrap = true
+                                        toPersianDigits(info.d.toString().padStart(2, '۰')),
+                                        Modifier.width(48.dp), textAlign = TextAlign.Center,
+                                        fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = IRANSansX,
+                                        color = when {
+                                            info.isToday -> sk.primary
+                                            holiday -> sk.holiday
+                                            else -> sk.text
+                                        }
                                     )
-                                }
-                                if (info.note != null) {
                                     Text(
-                                        info.note,
-                                        fontSize = 12.sp, lineHeight = 20.sp, fontFamily = IRANSansX,
-                                        color = sk.textMuted,
-                                        maxLines = 3, softWrap = true
+                                        WEEKDAYS[info.weekday],
+                                        Modifier.width(64.dp), textAlign = TextAlign.Center,
+                                        fontSize = 12.sp, fontFamily = IRANSansX,
+                                        color = if (holiday) sk.holiday else sk.textMuted
                                     )
-                                }
-                                if (info.holidayNames.isEmpty() && info.note == null) {
-                                    Text("—", fontSize = 11.5.sp, fontFamily = IRANSansX, color = sk.textFaint)
+                                    Box(Modifier.width(96.dp), contentAlignment = Alignment.Center) {
+                                        if (all) {
+                                            Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                                                GROUPS.forEach { g ->
+                                                    val gKind = if (g == myGroup.toShiftGroup() && info.swapKind != null) info.swapKind else codeToKind(info.all.getValue(g))
+                                                    MiniBadge(g, gKind)
+                                                }
+                                            }
+                                        } else {
+                                            val badgeText = when (swappedKind) {
+                                                ShiftKind.DAY -> "صبح‌کار*"
+                                                ShiftKind.EVENING -> "عصرکار*"
+                                                ShiftKind.NIGHT -> "شب‌کار*"
+                                                ShiftKind.REST -> "استراحت*"
+                                                null -> CODE_NUM_FA.getValue(info.all.getValue(effShiftGroup))
+                                            }
+                                            Box(
+                                                Modifier
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .background(kc.brush)
+                                                    .padding(horizontal = 6.dp, vertical = 3.dp)
+                                            ) {
+                                                Text(
+                                                    badgeText,
+                                                    fontSize = 10.5.sp, fontWeight = FontWeight.Black, fontFamily = IRANSansX, color = kc.ink
+                                                )
+                                            }
+                                        }
+                                    }
+                                    Column(Modifier.weight(1f).padding(start = 12.dp, end = 8.dp)) {
+                                        if (info.overtimeHours > 0f || info.swapKind != null) {
+                                            val recLine = buildList {
+                                                if (info.overtimeHours > 0f) add("اضافه‌کاری: ${toPersianDigits(info.overtimeHours.toInt())} ساعت")
+                                                if (info.swapKind != null) add("جابه‌جایی: ${SHIFT_KIND_FA.getValue(info.swapKind)}")
+                                            }.joinToString(" · ")
+                                            Text(
+                                                recLine,
+                                                fontSize = 11.5.sp, fontWeight = FontWeight.Bold, fontFamily = IRANSansX,
+                                                color = sk.primary,
+                                                maxLines = 1, softWrap = false
+                                            )
+                                        }
+                                        if (info.holidayNames.isNotEmpty()) {
+                                            Text(
+                                                info.holidayNames.joinToString("، "),
+                                                fontSize = 11.5.sp, fontWeight = FontWeight.Bold, fontFamily = IRANSansX,
+                                                color = sk.holiday,
+                                                maxLines = 1, softWrap = false
+                                            )
+                                        }
+                                        if (info.occasions.isNotEmpty()) {
+                                            Text(
+                                                info.occasions.joinToString("، "),
+                                                fontSize = 11.sp, fontFamily = IRANSansX,
+                                                color = sk.textMuted,
+                                                maxLines = 1, softWrap = false
+                                            )
+                                        }
+                                        if (info.note != null) {
+                                            Text(
+                                                info.note,
+                                                fontSize = 11.5.sp, fontFamily = IRANSansX,
+                                                color = sk.textMuted,
+                                                maxLines = 1, softWrap = false
+                                            )
+                                        }
+                                        if (info.overtimeHours <= 0f && info.swapKind == null && info.holidayNames.isEmpty() && info.occasions.isEmpty() && info.note == null) {
+                                            Text("—", fontSize = 11.5.sp, fontFamily = IRANSansX, color = sk.textFaint)
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -994,19 +1443,5 @@ private fun TableFullscreen(
                 Icon(SkIcons.Calendar, "برو به امروز", Modifier.size(19.dp), tint = Color.White)
             }
         }
-    }
-}
-
-@Composable
-private fun MiniBadge(group: ShiftGroup, kind: ShiftKind) {
-    val kc = kindColors(kind)
-    Box(
-        Modifier
-            .size(width = 24.dp, height = 22.dp)
-            .clip(RoundedCornerShape(7.dp))
-            .background(kc.bg),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(group.faLetter(), fontSize = 10.sp, fontWeight = FontWeight.Black, fontFamily = IRANSansX, color = kc.ink)
     }
 }

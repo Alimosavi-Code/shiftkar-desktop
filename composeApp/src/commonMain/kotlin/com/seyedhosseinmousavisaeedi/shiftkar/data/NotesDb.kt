@@ -1,5 +1,6 @@
 package com.seyedhosseinmousavisaeedi.shiftkar.data
 
+import com.seyedhosseinmousavisaeedi.shiftkar.engine.*
 import com.seyedhosseinmousavisaeedi.shiftkar.platform.currentTimeMillis
 import com.seyedhosseinmousavisaeedi.shiftkar.platform.readAppStorageText
 import com.seyedhosseinmousavisaeedi.shiftkar.platform.recoverAppStorageBackup
@@ -14,11 +15,21 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.longOrNull
+import kotlinx.serialization.json.put
 
 /**
- * Notes persistence — multiplatform offline local storage (Android, iOS, Desktop).
- * Preserves the exact same NoteEntity schema and NotesRepository contract
- * (observeAll, listAll, listMonth, get, save where empty text deletes).
+ * Notes & Unified Cross-Platform Backup persistence (v6.7.3 Desktop & Multiplatform).
+ * Exports and imports `.json` backups 100% compatible with BOTH:
+ *  - Android ShiftKar (`v6.7.x`)
+ *  - ShiftKar Web PWA (`v6.7.x`)
+ *  - ShiftKar Desktop (`v6.2+`)
  */
 
 @Serializable
@@ -28,9 +39,30 @@ data class NoteEntity(
     val updatedAt: Long
 )
 
+data class ImportedSettingsPatch(
+    val myGroup: GroupFilter? = null,
+    val filterGroup: GroupFilter? = null,
+    val theme: ThemeId? = null,
+    val themeMode: ThemeMode? = null,
+    val viewType: ViewType? = null,
+    val showEvents: Boolean? = null,
+    val hapticOn: Boolean? = null,
+    val showEmployeesOnCalendar: Boolean? = null
+)
+
+data class ImportedBackupBundle(
+    val totalRestoredCount: Int,
+    val dayRecords: Map<String, DayRecord>,
+    val customPatterns: List<ShiftPatternSpec>,
+    val employees: List<EmployeeProfile>,
+    val activePatternId: String?,
+    val settingsPatch: ImportedSettingsPatch? = null
+)
+
 object NotesStore {
     private const val FILE_NAME = "shiftkar_notes_v1.json"
-    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true; isLenient = true }
+    private val prettyJson = Json { ignoreUnknownKeys = true; encodeDefaults = true; prettyPrint = true }
     private val mutex = Mutex()
 
     private fun loadFromDisk(): List<NoteEntity> {
@@ -91,27 +123,146 @@ object NotesStore {
         }
     }
 
-    fun exportJson(): String =
-        json.encodeToString(ListSerializer(NoteEntity.serializer()), _notes.value)
-
-    suspend fun importJson(raw: String): Int {
-        val imported = runCatching {
-            json.decodeFromString(ListSerializer(NoteEntity.serializer()), raw)
-        }.getOrElse { return -1 }
-        val valid = imported.filter { it.dateKey.isNotBlank() && it.text.isNotBlank() }
-        if (valid.isEmpty()) return 0
-        mutex.withLock {
-            val mergedMap = _notes.value.associateBy { it.dateKey }.toMutableMap()
-            for (item in valid) {
-                mergedMap[item.dateKey] = item
-            }
-            val mergedList = mergedMap.values.sortedByDescending { it.updatedAt }
-            _notes.value = mergedList
-            withContext(Dispatchers.Default) {
-                saveToDisk(mergedList)
+    suspend fun exportJson(
+        dayRecords: Map<String, DayRecord> = emptyMap(),
+        customPatterns: List<ShiftPatternSpec> = emptyList(),
+        employees: List<EmployeeProfile> = emptyList(),
+        activePatternId: String? = null,
+        settings: AppSettings? = null
+    ): String {
+        val all = _notes.value
+        val notesArr = buildJsonArray {
+            for (n in all) {
+                add(
+                    buildJsonObject {
+                        put("dateKey", n.dateKey)
+                        put("text", n.text)
+                        put("updatedAt", n.updatedAt)
+                    }
+                )
             }
         }
-        return valid.size
+        val recordsObj = SettingsRepository.encodeDayRecordsElement(dayRecords)
+        val patternsArr = SettingsRepository.encodeCustomPatternsElement(customPatterns)
+        val employeesArr = SettingsRepository.encodeEmployeesElement(employees)
+
+        val root = buildJsonObject {
+            put("app", "ShiftKar")
+            put("version", 4)
+            put("exportedAt", currentTimeMillis())
+            put("notes", notesArr)
+            put("dayRecords", recordsObj)
+            put("customPatterns", patternsArr)
+            put("employees", employeesArr)
+            if (!activePatternId.isNullOrBlank()) {
+                put("activePatternId", activePatternId)
+            }
+            if (settings != null) {
+                put(
+                    "settings",
+                    buildJsonObject {
+                        put("myGroup", settings.myGroup.name)
+                        put("filterGroup", settings.filterGroup.name)
+                        put("theme", settings.theme.name.lowercase())
+                        put("themeMode", settings.themeMode.name.lowercase())
+                        put("viewType", settings.viewType.name.lowercase())
+                        put("showEvents", settings.showEvents)
+                        put("hapticOn", settings.hapticOn)
+                        put("activePatternId", settings.activePatternId)
+                        put("showEmployeesOnCalendar", settings.showEmployeesOnCalendar)
+                    }
+                )
+            }
+        }
+        return prettyJson.encodeToString(JsonObject.serializer(), root)
+    }
+
+    suspend fun importFullBackup(rawJson: String): ImportedBackupBundle {
+        val trimmed = rawJson.trim().removePrefix("\uFEFF")
+        val elem = json.parseToJsonElement(trimmed)
+        val rootObj = elem as? JsonObject
+        val notesArr: JsonArray = when {
+            elem is JsonArray -> elem
+            rootObj != null -> (rootObj["notes"] as? JsonArray) ?: (rootObj["items"] as? JsonArray) ?: JsonArray(emptyList())
+            else -> JsonArray(emptyList())
+        }
+
+        val now = currentTimeMillis()
+        val parsedNotes = mutableListOf<NoteEntity>()
+        for (itemEl in notesArr) {
+            val obj = itemEl as? JsonObject ?: continue
+            val dateKey = (obj["dateKey"] as? JsonPrimitive)?.content?.trim().orEmpty()
+            val text = (obj["text"] as? JsonPrimitive)?.content?.trim().orEmpty()
+            val updatedAt = (obj["updatedAt"] as? JsonPrimitive)?.longOrNull ?: now
+            if (dateKey.matches(Regex("^\\d{4}-\\d{2}-\\d{2}$")) && text.isNotEmpty()) {
+                parsedNotes.add(NoteEntity(dateKey = dateKey, text = text.take(500), updatedAt = updatedAt))
+            }
+        }
+
+        if (parsedNotes.isNotEmpty()) {
+            mutex.withLock {
+                val mergedMap = _notes.value.associateBy { it.dateKey }.toMutableMap()
+                for (item in parsedNotes) {
+                    val existing = mergedMap[item.dateKey]
+                    if (existing == null || item.updatedAt >= existing.updatedAt) {
+                        mergedMap[item.dateKey] = item
+                    }
+                }
+                val mergedList = mergedMap.values.sortedByDescending { it.updatedAt }
+                _notes.value = mergedList
+                withContext(Dispatchers.Default) {
+                    saveToDisk(mergedList)
+                }
+            }
+        }
+
+        val settingsObj = rootObj?.get("settings") as? JsonObject
+        val recordsObj = (rootObj?.get("dayRecords") as? JsonObject) ?: (settingsObj?.get("dayRecords") as? JsonObject)
+        val patternsArr = (rootObj?.get("customPatterns") as? JsonArray) ?: (settingsObj?.get("customPatterns") as? JsonArray)
+        val employeesArr = (rootObj?.get("employees") as? JsonArray) ?: (settingsObj?.get("employees") as? JsonArray)
+
+        val importedRecords = SettingsRepository.parseDayRecordsElement(recordsObj)
+        val importedPatterns = SettingsRepository.parseCustomPatternsElement(patternsArr)
+        val importedEmployees = SettingsRepository.parseEmployeesElement(employeesArr)
+
+        val actPat = ((rootObj?.get("activePatternId") as? JsonPrimitive)?.content
+            ?: (settingsObj?.get("activePatternId") as? JsonPrimitive)?.content)
+            ?.trim()?.takeIf { it.isNotEmpty() }
+
+        val patch = settingsObj?.let { sObj ->
+            ImportedSettingsPatch(
+                myGroup = (sObj["myGroup"] as? JsonPrimitive)?.content?.let {
+                    runCatching { GroupFilter.valueOf(it.uppercase()) }.getOrNull()
+                },
+                filterGroup = (sObj["filterGroup"] as? JsonPrimitive)?.content?.let {
+                    runCatching { GroupFilter.valueOf(it.uppercase()) }.getOrNull()
+                },
+                theme = (sObj["theme"] as? JsonPrimitive)?.content?.let {
+                    SettingsStore.parseTheme(it)
+                },
+                themeMode = (sObj["themeMode"] as? JsonPrimitive)?.content?.let {
+                    runCatching { ThemeMode.valueOf(it.uppercase()) }.getOrNull()
+                },
+                viewType = (sObj["viewType"] as? JsonPrimitive)?.content?.let {
+                    runCatching { ViewType.valueOf(it.uppercase()) }.getOrNull()
+                },
+                showEvents = (sObj["showEvents"] as? JsonPrimitive)?.booleanOrNull,
+                hapticOn = (sObj["hapticOn"] as? JsonPrimitive)?.booleanOrNull,
+                showEmployeesOnCalendar = (sObj["showEmployeesOnCalendar"] as? JsonPrimitive)?.booleanOrNull
+            )
+        }
+
+        val settingsRestored = if (patch != null) 1 else 0
+        val patActRestored = if (!actPat.isNullOrBlank()) 1 else 0
+
+        return ImportedBackupBundle(
+            totalRestoredCount = parsedNotes.size + importedRecords.size + importedEmployees.size + importedPatterns.size + settingsRestored + patActRestored,
+            dayRecords = importedRecords,
+            customPatterns = importedPatterns,
+            employees = importedEmployees,
+            activePatternId = actPat,
+            settingsPatch = patch
+        )
     }
 }
 
@@ -121,6 +272,15 @@ class NotesRepository {
     suspend fun listMonth(jy: Int, jm: Int): List<NoteEntity> = NotesStore.listMonth(jy, jm)
     suspend fun get(dateKey: String): NoteEntity? = NotesStore.get(dateKey)
     suspend fun save(dateKey: String, text: String) = NotesStore.save(dateKey, text)
-    fun exportJson(): String = NotesStore.exportJson()
-    suspend fun importJson(raw: String): Int = NotesStore.importJson(raw)
+
+    suspend fun exportJson(
+        dayRecords: Map<String, DayRecord> = emptyMap(),
+        customPatterns: List<ShiftPatternSpec> = emptyList(),
+        employees: List<EmployeeProfile> = emptyList(),
+        activePatternId: String? = null,
+        settings: AppSettings? = null
+    ): String = NotesStore.exportJson(dayRecords, customPatterns, employees, activePatternId, settings)
+
+    suspend fun importJson(raw: String): Int = NotesStore.importFullBackup(raw).totalRestoredCount
+    suspend fun importFullBackup(raw: String): ImportedBackupBundle = NotesStore.importFullBackup(raw)
 }

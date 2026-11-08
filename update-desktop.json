@@ -1,22 +1,22 @@
 {
-  "versionCode": 66,
-  "versionName": "6.2.0",
-  "releaseDate": "۱۴۰۵/۰۸/۰۴",
+  "versionCode": 75,
+  "versionName": "6.7.3",
+  "releaseDate": "۱۴۰۵/۰۸/۱۷",
   "isForceUpdate": false,
-  "downloadUrl": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.2.0/ShiftKar-6.2.0-windows-x64-setup.exe",
+  "downloadUrl": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.7.3/ShiftKar-6.7.3-windows-x64-setup.exe",
   "downloads": {
-    "windows-x64": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.2.0/ShiftKar-6.2.0-windows-x64-setup.exe",
-    "windows-x64-msi": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.2.0/ShiftKar-6.2.0-windows-x64.msi",
-    "windows-arm64": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.2.0/ShiftKar-6.2.0-windows-arm64-setup.exe",
-    "windows-arm64-msi": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.2.0/ShiftKar-6.2.0-windows-arm64.msi",
-    "macos-arm64": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.2.0/ShiftKar-6.2.0-macos-arm64.dmg",
-    "macos-x64": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.2.0/ShiftKar-6.2.0-macos-x64.dmg",
-    "linux-x64-rpm": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.2.0/ShiftKar-6.2.0-linux-x64.rpm",
-    "linux-x64-deb": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.2.0/ShiftKar-6.2.0-linux-x64.deb",
-    "linux-x64-appimage": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.2.0/ShiftKar-6.2.0-linux-x64.AppImage",
-    "linux-arm64-rpm": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.2.0/ShiftKar-6.2.0-linux-arm64.rpm",
-    "linux-arm64-deb": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.2.0/ShiftKar-6.2.0-linux-arm64.deb",
-    "linux-arm64-appimage": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.2.0/ShiftKar-6.2.0-linux-arm64.AppImage"
+    "windows-x64": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.7.3/ShiftKar-6.7.3-windows-x64-setup.exe",
+    "windows-x64-msi": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.7.3/ShiftKar-6.7.3-windows-x64.msi",
+    "windows-arm64": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.7.3/ShiftKar-6.7.3-windows-arm64-setup.exe",
+    "windows-arm64-msi": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.7.3/ShiftKar-6.7.3-windows-arm64.msi",
+    "macos-arm64": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.7.3/ShiftKar-6.7.3-macos-arm64.dmg",
+    "macos-x64": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.7.3/ShiftKar-6.7.3-macos-x64.dmg",
+    "linux-x64-rpm": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.7.3/ShiftKar-6.7.3-linux-x64.rpm",
+    "linux-x64-deb": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.7.3/ShiftKar-6.7.3-linux-x64.deb",
+    "linux-x64-appimage": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.7.3/ShiftKar-6.7.3-linux-x64.AppImage",
+    "linux-arm64-rpm": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.7.3/ShiftKar-6.7.3-linux-arm64.rpm",
+    "linux-arm64-deb": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.7.3/ShiftKar-6.7.3-linux-arm64.deb",
+    "linux-arm64-appimage": "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/download/v6.7.3/ShiftKar-6.7.3-linux-arm64.AppImage"
   },
   "sha256": {
     "windows-x64": "",
@@ -33,9 +33,9 @@
     "linux-arm64-appimage": ""
   },
   "changelog": [
-    "امنیت حداکثری بروزرسانی (v6.2.0) — اعتبارسنجی رمزنگاری SHA-256 برای تمام فایل‌های نصبی دانلودشده به‌همراه بررسی دامنهٔ مجاز گیت‌هاب و دانلود اتمیک (.part)",
-    "ذخیره‌سازی اتمیک و ضدکرش یادداشت‌ها و تنظیمات (.tmp + .bak) به‌همراه ذخیرهٔ خودکار یادداشت هنگام بستن پنجرهٔ روز",
-    "بروزرسانی خودکار تاریخ «امروز» در نیمه‌شب، پشتیبانی از آیکون System Tray، میانبرهای صفحه‌کلید (Esc، Ctrl+F، Ctrl+T، F11) و خروجی تصویر لوحه سالانه (PNG)",
-    "بهینه‌سازی نمای جدولی تمام‌عرض با اسکرول عمودی روان ماوس و چیدمان چندستونهٔ واکنش‌گرا در لوحه و سامانه‌ها"
+    "هماهنگی کامل با نسخهٔ ۶.۷.۳ اندروید و وب: ۴۵ الگوی استاندارد شیفت، سازندهٔ الگوی سفارشی، پشتیبانی از شیفت عصرکار (و مخفی‌سازی خودکار در الگوهای فاقد عصرکار)، و تب پنجم «مدیریت شیفت و پرسنل»",
+    "تطبیق ۱۰۰٪ تقویم و لوحهٔ ۱۶ ستونی (۱۲ ماهه بدون فروردین سال بعد) با تقویم رسمی مرکز تقویم مؤسسهٔ ژئوفیزیک دانشگاه تهران تا سال ۱۴۰۶",
+    "افزودن قابلیت‌های اختصاصی دسکتاپ: رنگ دینامیک سیستم‌عامل (Windows DWM / macOS / KDE / GNOME)، ویجت شناور رومیزی شیشه‌ای، آیکون زنده کنار ساعت و کپی مستقیم تصاویر لوحه و گزارش در کلیپ‌بورد",
+    "رفع کامل باگ‌های ویندوز: حذف نوار عنوان تکراری بالا، بازطراحی منوی راست‌کلیک System Tray با فونت فارسی شفاف IRANSansX، و افکت بلور شیشه‌ای واقعی (PWA-Style) در نوار پایین"
   ]
 }

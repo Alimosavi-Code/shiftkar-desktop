@@ -1,14 +1,8 @@
 package com.seyedhosseinmousavisaeedi.shiftkar.engine
 
-import com.seyedhosseinmousavisaeedi.shiftkar.platform.readBundledEventsJson
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-
 import kotlinx.serialization.Serializable
-import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
-import kotlin.concurrent.Volatile
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Official Iranian events dataset — loaded verbatim from
@@ -51,23 +45,22 @@ data class IrregularDto(
 private data class EventsFile(val recurring: List<EventDto>, val irregular: List<IrregularDto>)
 
 object EventsRepo {
-    val recurring: List<EventDto> get() = holder.recurring
-    val irregular: List<IrregularDto> get() = holder.irregular
-
-    private val holder: EventsFile get() = init ?: EventsFile(emptyList(), emptyList())
+    val recurring: List<EventDto> get() = init?.recurring ?: emptyList()
+    val irregular: List<IrregularDto> get() = init?.irregular ?: emptyList()
 
     @Volatile
     private var init: EventsFile? = null
 
-    /** v6.1.0: fast-path guard for Holidays.initialize() */
+    /** v6.1.0: گاردِ مسیرِ سریع برای Holidays.initialize — true پس از پارس موفق. */
     val isLoaded: Boolean get() = init != null
 
-    val isInitialized: Boolean get() = init != null
-
-    /** Init with the raw events.json content (read from assets/composeResources by the app). */
+    /** Init with the raw events.json content (read from assets by the app). */
     fun initWithJson(json: String) {
-        if (init == null) {
-            init = Json { ignoreUnknownKeys = true }.decodeFromString(EventsFile.serializer(), json)
+        if (init == null) synchronized(this) {
+            if (init == null) {
+                init = Json { ignoreUnknownKeys = true }.decodeFromString(EventsFile.serializer(), json)
+                Holidays.clearCache()
+            }
         }
     }
 }
@@ -88,15 +81,8 @@ object Holidays {
 
     /* ---------------- calendar helpers ---------------- */
 
-    private fun isGregorianLeap(gy: Int): Boolean =
-        (gy % 4 == 0 && gy % 100 != 0) || (gy % 400 == 0)
-
-    private fun gregorianMonthLength(gy: Int, gm: Int): Int = when (gm) {
-        1, 3, 5, 7, 8, 10, 12 -> 31
-        4, 6, 9, 11 -> 30
-        2 -> if (isGregorianLeap(gy)) 29 else 28
-        else -> 30
-    }
+    private fun gregorianMonthLength(gy: Int, gm: Int): Int =
+        java.time.YearMonth.of(gy, gm).lengthOfMonth()
 
     /* Weekday ordinal for a date, in the persian-calendar convention where the
      * data's weekday numbers are 1 = Sunday … 7 = Saturday. weekDayOrdinal()
@@ -158,7 +144,11 @@ object Holidays {
 
     /* ---------------- per-year resolution ---------------- */
 
-    private val yearCache = mutableMapOf<Int, Map<String, List<DayEvent>>>()
+    private val yearCache = ConcurrentHashMap<Int, Map<String, List<DayEvent>>>()
+
+    internal fun clearCache() {
+        yearCache.clear()
+    }
 
     private fun inRange(jy: Int, e: EventDto): Boolean =
         (e.begin == null || jy >= e.begin) && (e.end == null || jy <= e.end)
@@ -167,9 +157,7 @@ object Holidays {
         (e.begin == null || jy >= e.begin) && (e.end == null || jy <= e.end)
 
     /** Map of "jm-jd" -> events for one Jalali year (holidays first). */
-    @Synchronized
     private fun resolveYear(jy: Int): Map<String, List<DayEvent>> {
-        if (!EventsRepo.isInitialized) return emptyMap()
         yearCache[jy]?.let { return it }
         val map = HashMap<String, MutableList<DayEvent>>()
 
@@ -237,6 +225,46 @@ object Holidays {
             }
         }
 
+        // Apply remote CalendarSync overrides (extraEvents, removeHolidayDates, removeEventsOnDates)
+        val remEvents = CalendarSync.removeEventsOnDates
+        val remHolidays = CalendarSync.removeHolidayDates
+        val extras = CalendarSync.extraEvents
+
+        if (remEvents.isNotEmpty() || remHolidays.isNotEmpty()) {
+            for (jm in 1..12) {
+                val len = jalaaliMonthLength(jy, jm)
+                for (jd in 1..len) {
+                    val ymd = "%04d-%02d-%02d".format(java.util.Locale.US, jy, jm, jd)
+                    val md = "%02d-%02d".format(java.util.Locale.US, jm, jd)
+                    val key = "$jm-$jd"
+                    if (ymd in remEvents || md in remEvents) {
+                        map.remove(key)
+                    } else if (ymd in remHolidays || md in remHolidays) {
+                        map[key]?.let { existing ->
+                            val demoted = existing.map { it.copy(isHoliday = false) }.toMutableList()
+                            map[key] = demoted
+                        }
+                    }
+                }
+            }
+        }
+
+        if (extras.isNotEmpty()) {
+            for (ex in extras) {
+                val parts = ex.date.split("-")
+                if (parts.size == 3) {
+                    val ey = parts[0].toIntOrNull() ?: continue
+                    val em = parts[1].toIntOrNull() ?: continue
+                    val ed = parts[2].toIntOrNull() ?: continue
+                    if (ey == jy) add(em, ed, ex.title, ex.isHoliday)
+                } else if (parts.size == 2) {
+                    val em = parts[0].toIntOrNull() ?: continue
+                    val ed = parts[1].toIntOrNull() ?: continue
+                    add(em, ed, ex.title, ex.isHoliday)
+                }
+            }
+        }
+
         // Stable display order per day: official holidays first, then by title.
         // Persian alphabet primary order — matches ICU/V8 `localeCompare(…, "fa")`
         // (the JRE Collator(fa) does NOT reorder پ/چ/ژ/گ, so we do it explicitly).
@@ -245,7 +273,9 @@ object Holidays {
                 compareByDescending<DayEvent> { it.isHoliday }.thenComparator { a, b -> persianCompare(a.title, b.title) }
             )
         }
-        yearCache[jy] = result
+        if (EventsRepo.isLoaded) {
+            yearCache[jy] = result
+        }
         return result
     }
 
@@ -302,33 +332,4 @@ object Holidays {
 
     fun isHoliday(jy: Int, jm: Int, jd: Int): Boolean =
         getDayEvents(jy, jm, jd).any { it.isHoliday }
-}
-
-/**
- * v6.1.0 — Background bootstrapper for events.json so cold start never blocks the main UI thread.
- */
-object HolidaysLoader {
-    @Volatile
-    var ready: Boolean = false
-        private set
-
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-
-    fun kick() {
-        if (ready || EventsRepo.isLoaded) {
-            ready = true
-            return
-        }
-        scope.launch {
-            try {
-                if (!EventsRepo.isLoaded) {
-                    EventsRepo.initWithJson(readBundledEventsJson())
-                }
-            } catch (_: Throwable) {
-                // Broken dataset falls back gracefully to no official events without crashing
-            } finally {
-                ready = true
-            }
-        }
-    }
 }

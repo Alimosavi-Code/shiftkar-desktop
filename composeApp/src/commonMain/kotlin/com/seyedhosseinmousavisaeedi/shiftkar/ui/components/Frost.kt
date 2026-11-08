@@ -1,7 +1,5 @@
 package com.seyedhosseinmousavisaeedi.shiftkar.ui.components
 
-import com.seyedhosseinmousavisaeedi.shiftkar.platform.supportsBackdropBlur
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -14,36 +12,33 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import com.seyedhosseinmousavisaeedi.shiftkar.platform.supportsBackdropBlur
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.theme.LocalSk
 import kotlin.math.roundToInt
 
 /**
- * FrostBarBackdrop — «شیشهٔ مات واقعی» برای نوار پایین.
- *
- * تاکنون نوار فقط یک گرادیانت نیمه‌شفاف داشت (بدون blur) و صاحب برنامه آن را
- * «ساده و بدون مات» می‌خواند. راه‌حل بدون کتابخانهٔ خارجی: چون پس‌زمینهٔ پشت
- * نوار همان AuroraBackground خودمان است، یک «رونوشت» از همان آورورا را با
- * آفست دقیق (منهای مختصات نوار در ریشه) داخل نوار می‌کشیم و با
- * Modifier.blur (RenderEffect، API 31+) مات می‌کنیم — یعنی دقیقاً همان
- * backdrop-filter مرورگر. لایهٔ محتوا (آیکون/متن) روی این لایهٔ مات کشیده
- * می‌شود و هیچ‌وقت تار نمی‌شود.
- *
- * API < 31: RenderEffect وجود ندارد (مثل مرورگر بدون backdrop-filter) →
- * به‌جایش لایهٔ tint کمی پررنگ‌تر می‌شود تا خوانایی حفظ شود.
+ * FrostBarBackdrop — PWA-style Translucent Frosted Glass Bottom Navigation Bar (`sk-bottom-nav` parity):
+ *  - Uses a deep 32.dp Skia blur (`Modifier.blur(32.dp)`) of the underlying Aurora + primary ambient glow.
+ *  - Translucent glass gradient (`alpha = 0.62f` in dark mode, `0.68f` in light mode — matching
+ *    the PWA's `--sk-nav-hi: rgba(22, 29, 52, 0.68)` / `--sk-nav-lo: rgba(15, 20, 38, 0.56)`!)
+ *    instead of the old opaque `0.90f` paint that hid the blur.
+ *  - Top specular highlight line + subtle outer floating shadow.
  */
 @Composable
 fun FrostBarBackdrop(
@@ -53,6 +48,7 @@ fun FrostBarBackdrop(
     content: @Composable BoxScope.() -> Unit
 ) {
     val sk = LocalSk.current
+    val dark = sk.background.luminance() < 0.5f
     val density = LocalDensity.current
     val canBlur = supportsBackdropBlur
 
@@ -60,17 +56,19 @@ fun FrostBarBackdrop(
 
     Box(
         modifier
+            .shadow(
+                elevation = if (dark) 24.dp else 16.dp,
+                shape = shape,
+                ambientColor = Color.Black.copy(alpha = if (dark) 0.65f else 0.22f),
+                spotColor = sk.glowA.copy(alpha = if (dark) 0.45f else 0.25f)
+            )
             .clip(shape)
             .onGloballyPositioned { coords ->
                 val p = coords.positionInRoot()
                 myTopLeft = IntOffset(p.x.roundToInt(), p.y.roundToInt())
             }
     ) {
-        /* ۱) رونوشت مات‌شدهٔ آورورا — هم‌ترازِ دقیق با پس‌زمینهٔ واقعی
-         * v2.2.2 fix: لایهٔ رونوشت باید matchParentSize باشد وگرنه Boxِ «wrap content»
-         * به اندازهٔ خودِ آورورا (تمام صفحه) بزرگ می‌شود — رگرسیون ۲.۲.۱ که نوار را
-         * به بالای صفحه می‌فرستاد. داخل این لایه، رونوشت با آفست منفی کشیده و با
-         * clipToBounds به همین نوار محدود می‌شود. */
+        /* 1. Blurred Aurora + Ambient Glow Backdrop (32.dp Skia Gaussian Blur) */
         Box(
             Modifier
                 .matchParentSize()
@@ -83,40 +81,48 @@ fun FrostBarBackdrop(
                     Modifier
                         .offset { IntOffset(-myTopLeft.x, -myTopLeft.y) }
                         .size(auroraW, auroraH)
-                        .then(if (canBlur) Modifier.blur(24.dp) else Modifier)
+                        .then(if (canBlur) Modifier.blur(32.dp) else Modifier)
                 ) {
                     AuroraBackground(Modifier.fillMaxSize())
                 }
             }
         }
 
-        /* ۲) لایهٔ tint شیشه — روی مات، زیر محتوا
-         * v6.0.4 (مالک: «Make the bottom bar a bit more glassy! Just a bit»):
-         * آلفا از ۰٫۹۴ به ۰٫۹۰ — هنوز هیچ متنی از زیر نوار رد نمی‌شود ولی شیشه
-         * نفس بیشتری می‌کشد؛ شکل، خط دور و خط نور دست‌نخورده.
-         * (پایه: v6.0.3 — سطحِ کدر ۰٫۹۴ روی همهٔ APIها به‌جای ۰٫۳۸ فقط API<31) */
+        /* 2. PWA-Matching Translucent Glass Tint (`--sk-nav-hi` -> `--sk-nav-lo` + Specular Top Line) */
         Box(
             Modifier
                 .matchParentSize()
                 .drawBehind {
-                    drawRect(Brush.linearGradient(listOf(sk.glassHi, sk.glassLo), start = Offset.Zero, end = Offset(0.55f, 1f)))
-                    drawRect(sk.sheetSolid.copy(alpha = 0.90f))
-                    // لبهٔ نور بالای شیشه (specular، پاریتی CSS)
+                    val navHi = if (dark) sk.sheetSolid.copy(alpha = 0.66f) else Color.White.copy(alpha = 0.72f)
+                    val navLo = if (dark) sk.background.copy(alpha = 0.54f) else Color.White.copy(alpha = 0.56f)
+                    drawRect(
+                        Brush.verticalGradient(
+                            colors = listOf(navHi, navLo),
+                            startY = 0f,
+                            endY = size.height
+                        )
+                    )
+                    drawRect(
+                        Brush.linearGradient(
+                            colors = listOf(sk.glassHi, sk.glassLo, sk.primary.copy(alpha = if (dark) 0.08f else 0.05f)),
+                            start = Offset.Zero,
+                            end = Offset(size.width, size.height)
+                        )
+                    )
+                    // Crisp top specular reflection line (matching CSS `inset 0 1px 0 var(--sk-specular)`)
                     drawLine(
                         color = sk.specular,
                         start = Offset(0f, 0.5f),
                         end = Offset(size.width, 0.5f),
-                        strokeWidth = 1f
+                        strokeWidth = 1.2f
                     )
                 }
         )
 
-        /* ۳) خط دور */
+        /* 3. Glass Border */
         Box(Modifier.matchParentSize().border(1.dp, sk.border, shape))
 
-        /* ۴) محتوا — همیشه تیز. فرزند «معمولی» (نه matchParentSize) تا اندازهٔ
-         * نوار را تعیین کند؛ لایه‌های ۱ تا ۳ با matchParentSize به همین اندازه
-         * درمی‌آیند (v2.2.2). */
+        /* 4. Sharp Foreground Content */
         Box(Modifier, content = content)
     }
 }
