@@ -243,44 +243,20 @@ fun RosterScreen(
 
         if (filter == GroupFilter.ALL && hasGroups) {
             Spacer(Modifier.height(6.dp))
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(5.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                val modes = listOf(
-                    RosterAllShiftsMode.CLASSIC_1405 to "لوحه کلاسیک",
-                    RosterAllShiftsMode.BY_SHIFT_ROLE to "لوحه رسمی (نوبت‌ها)",
-                    RosterAllShiftsMode.BY_GROUP_ROW to "ماتریس ۴ شیفت"
-                )
-                modes.forEach { (m, label) ->
-                    val active = allShiftsMode == m
-                    Box(
-                        Modifier
-                            .weight(1f)
-                            .height(32.dp)
-                            .clip(RoundedCornerShape(11.dp))
-                            .background(if (active) sk.primarySoft else sk.surface)
-                            .border(
-                                width = if (active) 1.3.dp else 1.dp,
-                                color = if (active) sk.primary else sk.borderSoft,
-                                shape = RoundedCornerShape(11.dp)
-                            )
-                            .clickableNoRipple {
-                                haptic.tick()
-                                allShiftsMode = m
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            label,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = IRANSansX,
-                            color = if (active) sk.primary else sk.textMuted,
-                            maxLines = 1
-                        )
-                    }
+            SegmentedControl(
+                options = listOf("لوحه کلاسیک", "لوحه رسمی (نوبت‌ها)", "ماتریس ۴ شیفت"),
+                selectedIndex = when (allShiftsMode) {
+                    RosterAllShiftsMode.CLASSIC_1405 -> 0
+                    RosterAllShiftsMode.BY_SHIFT_ROLE -> 1
+                    RosterAllShiftsMode.BY_GROUP_ROW -> 2
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) { idx ->
+                haptic.tick()
+                allShiftsMode = when (idx) {
+                    0 -> RosterAllShiftsMode.CLASSIC_1405
+                    1 -> RosterAllShiftsMode.BY_SHIFT_ROLE
+                    else -> RosterAllShiftsMode.BY_GROUP_ROW
                 }
             }
         }
@@ -536,322 +512,389 @@ private fun Classic1405LoheView(
     }
 
     val isDark = sk.background.red < 0.3f
-    /* Theme-harmonized Frost palette for the 4 iconic center columns (A=Cyan, B=Amber, C=Emerald, D=Magenta) */
-    val colHeaderA = if (isDark) Color(0xFF0284C7).copy(alpha = 0.55f) else Color(0xFF38BDF8).copy(alpha = 0.45f)
-    val colCellA = if (isDark) Color(0xFF38BDF8).copy(alpha = 0.22f) else Color(0xFFBAE6FD).copy(alpha = 0.65f)
+
+    /* Soft, glassmorphic pastel palette for the 4 center columns (A=Cyan, B=Amber, C=Emerald, D=Rose/Magenta) */
+    val colHeaderA = if (isDark) Color(0xFF0EA5E9).copy(alpha = 0.28f) else Color(0xFF38BDF8).copy(alpha = 0.24f)
+    val colCellA = if (isDark) Color(0xFF38BDF8).copy(alpha = 0.13f) else Color(0xFFE0F2FE).copy(alpha = 0.65f)
     val colInkA = if (isDark) Color(0xFF7DD3FC) else Color(0xFF0369A1)
 
-    val colHeaderB = if (isDark) Color(0xFFD97706).copy(alpha = 0.55f) else Color(0xFFFBBF24).copy(alpha = 0.50f)
-    val colCellB = if (isDark) Color(0xFFFBBF24).copy(alpha = 0.22f) else Color(0xFFFDE68A).copy(alpha = 0.70f)
-    val colInkB = if (isDark) Color(0xFFFDE047) else Color(0xFF92400E)
+    val colHeaderB = if (isDark) Color(0xFFF59E0B).copy(alpha = 0.28f) else Color(0xFFFBBF24).copy(alpha = 0.26f)
+    val colCellB = if (isDark) Color(0xFFFBBF24).copy(alpha = 0.13f) else Color(0xFFFEF3C7).copy(alpha = 0.68f)
+    val colInkB = if (isDark) Color(0xFFFDE68A) else Color(0xFF92400E)
 
-    val colHeaderC = if (isDark) Color(0xFF059669).copy(alpha = 0.55f) else Color(0xFF34D399).copy(alpha = 0.48f)
-    val colCellC = if (isDark) Color(0xFF34D399).copy(alpha = 0.22f) else Color(0xFFA7F3D0).copy(alpha = 0.70f)
+    val colHeaderC = if (isDark) Color(0xFF10B981).copy(alpha = 0.28f) else Color(0xFF34D399).copy(alpha = 0.26f)
+    val colCellC = if (isDark) Color(0xFF34D399).copy(alpha = 0.13f) else Color(0xFFD1FAE5).copy(alpha = 0.68f)
     val colInkC = if (isDark) Color(0xFF6EE7B7) else Color(0xFF065F46)
 
-    val colHeaderD = if (isDark) Color(0xFFDB2777).copy(alpha = 0.55f) else Color(0xFFF472B6).copy(alpha = 0.48f)
-    val colCellD = if (isDark) Color(0xFFF472B6).copy(alpha = 0.22f) else Color(0xFFFBCFE8).copy(alpha = 0.70f)
+    val colHeaderD = if (isDark) Color(0xFFEC4899).copy(alpha = 0.28f) else Color(0xFFF472B6).copy(alpha = 0.26f)
+    val colCellD = if (isDark) Color(0xFFF472B6).copy(alpha = 0.13f) else Color(0xFFFCE7F3).copy(alpha = 0.68f)
     val colInkD = if (isDark) Color(0xFFF9A8D4) else Color(0xFF9D174D)
 
-    val redHolBg = if (isDark) sk.holiday.copy(alpha = 0.78f) else Color(0xFFEF4444)
-    val yellowFriBg = if (isDark) sk.day.copy(alpha = 0.34f) else Color(0xFFFDE047)
-    val yellowFriInk = if (isDark) sk.dayInk else Color(0xFF713F12)
-    val gridLineColor = sk.borderSoft
+    /* Softer glassmorphic holiday & Friday colors matching the app and PWA */
+    val redHolBg = sk.holidaySoft
+    val redHolInk = sk.holiday
+    val yellowFriBg = sk.daySoft.copy(alpha = if (isDark) 0.55f else 0.72f)
+    val yellowFriInk = sk.dayInk
+    val gridLineColor = sk.borderSoft.copy(alpha = 0.52f)
     val thickLineColor = sk.border
 
     val firstHalfMonths = listOf("فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور")
     val secondHalfMonths = listOf("مهر", "آبان", "آذر", "دی", "بهمن", "اسفند")
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(bottom = 112.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        /* 1. Sleek Glassy Pill Title Header (matching the app's Frost aesthetic) */
-        Row(
-            Modifier
-                .padding(bottom = 8.dp)
-                .glass(RoundedCornerShape(100), tint = sk.primarySoft)
-                .border(1.2.dp, sk.primary.copy(alpha = 0.55f), RoundedCornerShape(100))
-                .padding(horizontal = 18.dp, vertical = 7.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Box(
-                Modifier
-                    .size(22.dp)
-                    .clip(CircleShape)
-                    .background(sk.primary),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(SkIcons.Roster, null, Modifier.size(12.dp), tint = sk.sheetSolid)
-            }
-            Text(
-                "لوحه نوبت‌کاری سال ${toPersianDigits(jy)}",
-                fontSize = 13.5.sp,
-                fontWeight = FontWeight.Black,
-                fontFamily = IRANSansX,
-                color = sk.text
-            )
-        }
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val rowH = ((maxHeight - 195.dp) / 32.5f).coerceIn(21.dp, 27.dp)
 
-        /* 2. Full-Width Theme-Fitted 17-Column Chart Card (all 17 columns weighted so zero cutoff!) */
-        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-            Column(
+        Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(bottom = 104.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            /* 1. Sleek Glassy Header Bar matching the app & PWA */
+            Row(
                 Modifier
                     .fillMaxWidth()
-                    .glass(RoundedCornerShape(18.dp))
-                    .border(1.2.dp, sk.border, RoundedCornerShape(18.dp))
-                    .padding(4.dp)
+                    .padding(bottom = 8.dp)
+                    .glass(RoundedCornerShape(16.dp), tint = sk.primarySoft.copy(alpha = 0.55f))
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                val mWeight = 1f
-                val gWeight = 1.22f
-                val rowH = 20.dp
-
-                /* Header Row: 6 Left Months | A B C D | 7 Right Months */
                 Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(
+                        Modifier
+                            .size(26.dp)
+                            .clip(RoundedCornerShape(9.dp))
+                            .background(sk.primarySoft)
+                            .border(1.dp, sk.primary.copy(alpha = 0.45f), RoundedCornerShape(9.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(SkIcons.Roster, null, Modifier.size(14.dp), tint = sk.primary)
+                    }
+                    Text(
+                        "لوحه نوبت‌کاری سال ${toPersianDigits(jy)}",
+                        fontSize = 13.5.sp,
+                        fontWeight = FontWeight.Black,
+                        fontFamily = IRANSansX,
+                        color = sk.text
+                    )
+                }
+                Text(
+                    "برای باز کردن هر ماه، روی نام ماه کلیک کنید",
+                    fontSize = 10.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = IRANSansX,
+                    color = sk.textMuted
+                )
+            }
+
+            /* 2. Frosted-Glass 16-Column Classic Table Card (6 Left Months | A B C D | 6 Right Months) */
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                Column(
                     Modifier
                         .fillMaxWidth()
-                        .height(58.dp)
-                        .clip(RoundedCornerShape(topStart = 13.dp, topEnd = 13.dp))
-                        .background(sk.surfaceStrong)
-                        .border(0.8.dp, thickLineColor, RoundedCornerShape(topStart = 13.dp, topEnd = 13.dp)),
-                    verticalAlignment = Alignment.CenterVertically
+                        .glass(RoundedCornerShape(24.dp))
+                        .padding(7.dp)
                 ) {
-                    firstHalfMonths.forEachIndexed { idx, mName ->
-                        Box(
-                            Modifier
-                                .weight(mWeight)
-                                .fillMaxHeight()
-                                .border(0.4.dp, gridLineColor)
-                                .clickableNoRipple { onOpenMonth(jy, idx + 1) },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                mName,
-                                fontSize = 7.8.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                fontFamily = IRANSansX,
-                                color = sk.text,
-                                maxLines = 1,
-                                softWrap = false,
-                                modifier = Modifier.graphicsLayer {
-                                    rotationZ = -90f
-                                    transformOrigin = TransformOrigin.Center
-                                }
-                            )
-                        }
-                    }
-
-                    val grpHeaders = listOf(
-                        Triple(ShiftGroup.A.faLetter(), colHeaderA, colInkA),
-                        Triple(ShiftGroup.B.faLetter(), colHeaderB, colInkB),
-                        Triple(ShiftGroup.C.faLetter(), colHeaderC, colInkC),
-                        Triple(ShiftGroup.D.faLetter(), colHeaderD, colInkD)
-                    )
-                    grpHeaders.forEach { (gLbl, gColor, gInk) ->
-                        Box(
-                            Modifier
-                                .weight(gWeight)
-                                .fillMaxHeight()
-                                .background(gColor)
-                                .border(0.8.dp, thickLineColor),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                gLbl,
-                                fontSize = 10.5.sp,
-                                fontWeight = FontWeight.Black,
-                                fontFamily = IRANSansX,
-                                color = gInk
-                            )
-                        }
-                    }
-
-                    secondHalfMonths.forEachIndexed { idx, mName ->
-                        val targetMonth = idx + 7
-                        Box(
-                            Modifier
-                                .weight(mWeight)
-                                .fillMaxHeight()
-                                .border(0.4.dp, gridLineColor)
-                                .clickableNoRipple { onOpenMonth(jy, targetMonth) },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                mName,
-                                fontSize = 7.8.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                fontFamily = IRANSansX,
-                                color = sk.text,
-                                maxLines = 1,
-                                softWrap = false,
-                                modifier = Modifier.graphicsLayer {
-                                    rotationZ = -90f
-                                    transformOrigin = TransformOrigin.Center
-                                }
-                            )
-                        }
-                    }
-                }
-
-                /* 32 Cycle Rows */
-                rowsData.forEachIndexed { rIdx, row ->
-                    Row(
+                    Column(
                         Modifier
                             .fillMaxWidth()
-                            .height(rowH),
-                        verticalAlignment = Alignment.CenterVertically
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(sk.surface.copy(alpha = 0.35f))
+                            .border(1.dp, sk.border, RoundedCornerShape(18.dp))
                     ) {
-                        /* Left 6 month day cells (months 1..6) */
-                        for (mIdx in 0 until 6) {
-                            val cell = row.monthCells[mIdx]
-                            val isToday = cell != null && today.jy == cell.jy && today.jm == cell.jm && today.jd == cell.day
-                            val cellBg = when {
-                                cell == null -> Color.Transparent
-                                cell.isOfficialHoliday -> redHolBg
-                                cell.isFriday -> yellowFriBg
-                                else -> sk.surface
-                            }
-                            val cellFg = when {
-                                cell == null -> Color.Transparent
-                                cell.isOfficialHoliday -> Color.White
-                                cell.isFriday -> yellowFriInk
-                                else -> sk.text
-                            }
-                            Box(
-                                Modifier
-                                    .weight(mWeight)
-                                    .fillMaxHeight()
-                                    .background(cellBg)
-                                    .border(
-                                        width = if (isToday) 1.4.dp else 0.4.dp,
-                                        color = if (isToday) sk.primary else gridLineColor
-                                    ),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                if (cell != null) {
+                        val mWeight = 1f
+                        val gWeight = 1.22f
+
+                        /* Glass Header Row: 6 Left Months | A B C D | 6 Right Months */
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .height(54.dp)
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(sk.glassHi, sk.surfaceStrong)
+                                    )
+                                )
+                                .border(0.6.dp, thickLineColor),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            firstHalfMonths.forEachIndexed { idx, mName ->
+                                Box(
+                                    Modifier
+                                        .weight(mWeight)
+                                        .fillMaxHeight()
+                                        .padding(2.dp)
+                                        .clip(RoundedCornerShape(9.dp))
+                                        .background(sk.surface.copy(alpha = 0.55f))
+                                        .border(0.6.dp, gridLineColor, RoundedCornerShape(9.dp))
+                                        .clickableNoRipple { onOpenMonth(jy, idx + 1) },
+                                    contentAlignment = Alignment.Center
+                                ) {
                                     Text(
-                                        toPersianDigits(cell.day),
-                                        fontSize = 7.8.sp,
-                                        lineHeight = 8.sp,
-                                        fontWeight = if (isToday || cell.isOfficialHoliday) FontWeight.Black else FontWeight.Bold,
+                                        mName,
+                                        fontSize = 8.2.sp,
+                                        fontWeight = FontWeight.ExtraBold,
                                         fontFamily = IRANSansX,
-                                        color = cellFg
+                                        color = sk.text,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        modifier = Modifier.graphicsLayer {
+                                            rotationZ = -90f
+                                            transformOrigin = TransformOrigin.Center
+                                        }
+                                    )
+                                }
+                            }
+
+                            val grpHeaders = listOf(
+                                Triple(ShiftGroup.A.faLetter(), colHeaderA, colInkA),
+                                Triple(ShiftGroup.B.faLetter(), colHeaderB, colInkB),
+                                Triple(ShiftGroup.C.faLetter(), colHeaderC, colInkC),
+                                Triple(ShiftGroup.D.faLetter(), colHeaderD, colInkD)
+                            )
+                            grpHeaders.forEach { (gLbl, gColor, gInk) ->
+                                Box(
+                                    Modifier
+                                        .weight(gWeight)
+                                        .fillMaxHeight()
+                                        .padding(2.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(gColor)
+                                        .border(1.dp, gInk.copy(alpha = 0.42f), RoundedCornerShape(10.dp)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        gLbl,
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Black,
+                                        fontFamily = IRANSansX,
+                                        color = gInk
+                                    )
+                                }
+                            }
+
+                            secondHalfMonths.forEachIndexed { idx, mName ->
+                                val targetMonth = idx + 7
+                                Box(
+                                    Modifier
+                                        .weight(mWeight)
+                                        .fillMaxHeight()
+                                        .padding(2.dp)
+                                        .clip(RoundedCornerShape(9.dp))
+                                        .background(sk.surface.copy(alpha = 0.55f))
+                                        .border(0.6.dp, gridLineColor, RoundedCornerShape(9.dp))
+                                        .clickableNoRipple { onOpenMonth(jy, targetMonth) },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        mName,
+                                        fontSize = 8.2.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontFamily = IRANSansX,
+                                        color = sk.text,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        modifier = Modifier.graphicsLayer {
+                                            rotationZ = -90f
+                                            transformOrigin = TransformOrigin.Center
+                                        }
                                     )
                                 }
                             }
                         }
 
-                        /* Center 4 Group Columns (A, B, C, D) */
-                        val grpCols = listOf(
-                            Triple(row.codeA, colCellA, colInkA),
-                            Triple(row.codeB, colCellB, colInkB),
-                            Triple(row.codeC, colCellC, colInkC),
-                            Triple(row.codeD, colCellD, colInkD)
-                        )
-                        grpCols.forEach { (code, bgCol, inkCol) ->
-                            Box(
+                        /* 31 Cycle Rows */
+                        rowsData.forEachIndexed { rIdx, row ->
+                            val stripeBg = if ((rIdx / 2) % 2 == 0) {
+                                sk.surface.copy(alpha = 0.25f)
+                            } else {
+                                sk.surfaceStrong.copy(alpha = 0.35f)
+                            }
+                            Row(
                                 Modifier
-                                    .weight(gWeight)
-                                    .fillMaxHeight()
-                                    .background(bgCol)
-                                    .border(0.6.dp, thickLineColor),
-                                contentAlignment = Alignment.Center
+                                    .fillMaxWidth()
+                                    .height(rowH)
+                                    .background(stripeBg),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(
-                                    code.name,
-                                    fontSize = 7.6.sp,
-                                    lineHeight = 8.sp,
-                                    fontWeight = FontWeight.Black,
-                                    fontFamily = IRANSansX,
-                                    color = inkCol
+                                /* Left 6 month day cells (months 1..6) */
+                                for (mIdx in 0 until 6) {
+                                    val cell = row.monthCells[mIdx]
+                                    val isToday = cell != null && today.jy == cell.jy && today.jm == cell.jm && today.jd == cell.day
+                                    val cellBg = when {
+                                        cell == null -> Color.Transparent
+                                        isToday -> sk.primarySoft
+                                        cell.isOfficialHoliday -> redHolBg
+                                        cell.isFriday -> yellowFriBg
+                                        else -> Color.Transparent
+                                    }
+                                    val cellFg = when {
+                                        cell == null -> Color.Transparent
+                                        isToday -> sk.primary
+                                        cell.isOfficialHoliday -> redHolInk
+                                        cell.isFriday -> yellowFriInk
+                                        else -> sk.text
+                                    }
+                                    Box(
+                                        Modifier
+                                            .weight(mWeight)
+                                            .fillMaxHeight()
+                                            .padding(0.8.dp)
+                                            .clip(RoundedCornerShape(5.dp))
+                                            .background(cellBg)
+                                            .border(
+                                                width = if (isToday) 1.5.dp else 0.4.dp,
+                                                color = if (isToday) sk.primary else gridLineColor,
+                                                shape = RoundedCornerShape(5.dp)
+                                            ),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (cell != null) {
+                                            Text(
+                                                toPersianDigits(cell.day),
+                                                fontSize = 8.4.sp,
+                                                lineHeight = 9.sp,
+                                                fontWeight = if (isToday || cell.isOfficialHoliday) FontWeight.Black else FontWeight.Bold,
+                                                fontFamily = IRANSansX,
+                                                color = cellFg
+                                            )
+                                        }
+                                    }
+                                }
+
+                                /* Center 4 Group Columns (A, B, C, D) */
+                                val grpCols = listOf(
+                                    Triple(row.codeA, colCellA, colInkA),
+                                    Triple(row.codeB, colCellB, colInkB),
+                                    Triple(row.codeC, colCellC, colInkC),
+                                    Triple(row.codeD, colCellD, colInkD)
+                                )
+                                grpCols.forEach { (code, bgCol, inkCol) ->
+                                    Box(
+                                        Modifier
+                                            .weight(gWeight)
+                                            .fillMaxHeight()
+                                            .padding(0.8.dp)
+                                            .clip(RoundedCornerShape(5.dp))
+                                            .background(bgCol)
+                                            .border(0.6.dp, inkCol.copy(alpha = 0.28f), RoundedCornerShape(5.dp)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            code.name,
+                                            fontSize = 8.2.sp,
+                                            lineHeight = 9.sp,
+                                            fontWeight = FontWeight.Black,
+                                            fontFamily = IRANSansX,
+                                            color = inkCol
+                                        )
+                                    }
+                                }
+
+                                /* Right 6 month day cells (months 7..12) */
+                                for (mIdx in 6 until 12) {
+                                    val cell = row.monthCells[mIdx]
+                                    val isToday = cell != null && today.jy == cell.jy && today.jm == cell.jm && today.jd == cell.day
+                                    val cellBg = when {
+                                        cell == null -> Color.Transparent
+                                        isToday -> sk.primarySoft
+                                        cell.isOfficialHoliday -> redHolBg
+                                        cell.isFriday -> yellowFriBg
+                                        else -> Color.Transparent
+                                    }
+                                    val cellFg = when {
+                                        cell == null -> Color.Transparent
+                                        isToday -> sk.primary
+                                        cell.isOfficialHoliday -> redHolInk
+                                        cell.isFriday -> yellowFriInk
+                                        else -> sk.text
+                                    }
+                                    Box(
+                                        Modifier
+                                            .weight(mWeight)
+                                            .fillMaxHeight()
+                                            .padding(0.8.dp)
+                                            .clip(RoundedCornerShape(5.dp))
+                                            .background(cellBg)
+                                            .border(
+                                                width = if (isToday) 1.5.dp else 0.4.dp,
+                                                color = if (isToday) sk.primary else gridLineColor,
+                                                shape = RoundedCornerShape(5.dp)
+                                            ),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (cell != null) {
+                                            Text(
+                                                toPersianDigits(cell.day),
+                                                fontSize = 8.4.sp,
+                                                lineHeight = 9.sp,
+                                                fontWeight = if (isToday || cell.isOfficialHoliday) FontWeight.Black else FontWeight.Bold,
+                                                fontFamily = IRANSansX,
+                                                color = cellFg
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                            /* Subtle glass divider every 2 rows matching the 2-2-4 block rhythm */
+                            if (rIdx % 2 == 1 && rIdx < rowsData.lastIndex) {
+                                Box(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .height(1.dp)
+                                        .background(thickLineColor.copy(alpha = 0.65f))
                                 )
                             }
                         }
-
-                        /* Right 7 month day cells (months 7..12 + Farvardin jy+1) */
-                        for (mIdx in 6 until 12) {
-                            val cell = row.monthCells[mIdx]
-                            val isToday = cell != null && today.jy == cell.jy && today.jm == cell.jm && today.jd == cell.day
-                            val cellBg = when {
-                                cell == null -> Color.Transparent
-                                cell.isOfficialHoliday -> redHolBg
-                                cell.isFriday -> yellowFriBg
-                                else -> sk.surface
-                            }
-                            val cellFg = when {
-                                cell == null -> Color.Transparent
-                                cell.isOfficialHoliday -> Color.White
-                                cell.isFriday -> yellowFriInk
-                                else -> sk.text
-                            }
-                            Box(
-                                Modifier
-                                    .weight(mWeight)
-                                    .fillMaxHeight()
-                                    .background(cellBg)
-                                    .border(
-                                        width = if (isToday) 1.4.dp else 0.4.dp,
-                                        color = if (isToday) sk.primary else gridLineColor
-                                    ),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                if (cell != null) {
-                                    Text(
-                                        toPersianDigits(cell.day),
-                                        fontSize = 7.8.sp,
-                                        lineHeight = 8.sp,
-                                        fontWeight = if (isToday || cell.isOfficialHoliday) FontWeight.Black else FontWeight.Bold,
-                                        fontFamily = IRANSansX,
-                                        color = cellFg
-                                    )
-                                }
-                            }
-                        }
-                    }
-                    /* Bold divider every 2 rows matching the classic 2-2-4 block rhythm */
-                    if (rIdx % 2 == 1 && rIdx < rowsData.lastIndex) {
-                        Box(
-                            Modifier
-                                .fillMaxWidth()
-                                .height(1.3.dp)
-                                .background(thickLineColor)
-                        )
                     }
                 }
             }
-        }
 
-        Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(8.dp))
 
-        /* 3. Glassy Legend Bar (author name is shown only in exported PNG) */
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .glass(RoundedCornerShape(14.dp))
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                Box(Modifier.size(11.dp).clip(RoundedCornerShape(3.dp)).background(redHolBg))
-                Text("تعطیل رسمی", fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = IRANSansX, color = sk.text)
+            /* 3. Glassy Legend Bar */
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .glass(RoundedCornerShape(16.dp))
+                    .padding(horizontal = 14.dp, vertical = 9.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Box(
+                        Modifier
+                            .size(13.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(redHolBg)
+                            .border(1.dp, redHolInk.copy(alpha = 0.55f), RoundedCornerShape(4.dp))
+                    )
+                    Text("تعطیل رسمی", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, fontFamily = IRANSansX, color = sk.text)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Box(
+                        Modifier
+                            .size(13.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(yellowFriBg)
+                            .border(1.dp, yellowFriInk.copy(alpha = 0.55f), RoundedCornerShape(4.dp))
+                    )
+                    Text("جمعه", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, fontFamily = IRANSansX, color = sk.text)
+                }
+                Text(
+                    if (ShiftEngine.activePattern.eveningCount > 0) "M: صبح‌کار · E: عصرکار · N: شب‌کار · R: استراحت"
+                    else "M: صبح‌کار · N: شب‌کار · R: استراحت",
+                    fontSize = 10.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = IRANSansX,
+                    color = sk.textMuted
+                )
             }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                Box(Modifier.size(11.dp).clip(RoundedCornerShape(3.dp)).background(yellowFriBg).border(0.8.dp, yellowFriInk, RoundedCornerShape(3.dp)))
-                Text("جمعه", fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = IRANSansX, color = sk.text)
-            }
-            Text(
-                if (ShiftEngine.activePattern.eveningCount > 0) "M: صبح‌کار · E: عصرکار · N: شب‌کار · R: استراحت"
-                else "M: صبح‌کار · N: شب‌کار · R: استراحت",
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = IRANSansX,
-                color = sk.textMuted
-            )
         }
     }
 }

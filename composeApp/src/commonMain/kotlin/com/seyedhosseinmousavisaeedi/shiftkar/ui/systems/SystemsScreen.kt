@@ -1,11 +1,11 @@
 package com.seyedhosseinmousavisaeedi.shiftkar.ui.systems
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.seyedhosseinmousavisaeedi.shiftkar.platform.openExternalUrl
@@ -50,49 +51,136 @@ private val SYSTEMS = listOf(
 fun SystemsScreen() {
     val sk = LocalSk.current
 
-    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-        Spacer(Modifier.height(12.dp))
-        Text(SkStrings.systems_title, fontSize = 22.sp, fontWeight = FontWeight.Black, fontFamily = IRANSansX, color = sk.text)
-        Text(
-            SkStrings.systems_subtitle,
-            Modifier.padding(top = 4.dp),
-            fontSize = 13.sp, fontFamily = IRANSansX, color = sk.textMuted
-        )
-        Spacer(Modifier.height(16.dp))
-        LazyVerticalGrid(
-            columns = GridCells.Adaptive(minSize = 250.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            contentPadding = PaddingValues(bottom = 108.dp)
+    BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
+        val cols = when {
+            maxWidth >= 940.dp -> 4
+            maxWidth >= 620.dp -> 3
+            else -> 2
+        }
+        val rowsCount = (SYSTEMS.size + cols - 1) / cols
+        val headerReserved = 82.dp
+        val navClearance = 96.dp
+        val vGap = 14.dp
+        val hGap = 14.dp
+        val availGridH = (maxHeight - headerReserved - navClearance - (vGap * (rowsCount - 1))).coerceAtLeast(360.dp)
+        val cardH = (availGridH / rowsCount).coerceIn(128.dp, 220.dp)
+
+        Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(bottom = navClearance)
         ) {
-            itemsIndexed(SYSTEMS) { _, item ->
-                Column(
-                    Modifier
-                        .glass(RoundedCornerShape(24.dp))
-                        .clickableNoRipple {
-                            openExternalUrl(item.href)
-                        }
-                        .padding(16.dp)
-                ) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Box(
-                            Modifier
-                                .size(44.dp)
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(sk.primarySoft),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(item.icon, item.title, Modifier.size(21.dp), tint = sk.primary)
-                        }
-                        Icon(SkIcons.External, null, Modifier.size(15.dp), tint = sk.textFaint)
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    Text(item.title, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = IRANSansX, color = sk.text)
+            Spacer(Modifier.height(14.dp))
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column {
                     Text(
-                        item.desc,
-                        Modifier.padding(top = 2.dp),
-                        fontSize = 11.5.sp, lineHeight = 20.sp, fontFamily = IRANSansX, color = sk.textMuted
+                        SkStrings.systems_title,
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Black,
+                        fontFamily = IRANSansX,
+                        color = sk.text
                     )
+                    Text(
+                        SkStrings.systems_subtitle,
+                        Modifier.padding(top = 3.dp),
+                        fontSize = 13.sp,
+                        fontFamily = IRANSansX,
+                        color = sk.textMuted
+                    )
+                }
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(100))
+                        .background(sk.primarySoft)
+                        .border(1.dp, sk.primary.copy(alpha = 0.4f), RoundedCornerShape(100))
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        "۱۲ سامانه فعال",
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = IRANSansX,
+                        color = sk.primary
+                    )
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+
+            Column(verticalArrangement = Arrangement.spacedBy(vGap)) {
+                SYSTEMS.chunked(cols).forEach { rowItems ->
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(hGap)
+                    ) {
+                        rowItems.forEach { item ->
+                            Column(
+                                Modifier
+                                    .weight(1f)
+                                    .height(cardH)
+                                    .glass(RoundedCornerShape(22.dp))
+                                    .clickableNoRipple { openExternalUrl(item.href) }
+                                    .padding(18.dp),
+                                verticalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        Modifier
+                                            .size(50.dp)
+                                            .clip(RoundedCornerShape(15.dp))
+                                            .background(sk.primarySoft)
+                                            .border(1.dp, sk.primary.copy(alpha = 0.35f), RoundedCornerShape(15.dp)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(item.icon, item.title, Modifier.size(24.dp), tint = sk.primary)
+                                    }
+                                    Box(
+                                        Modifier
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(sk.surfaceStrong)
+                                            .border(1.dp, sk.borderSoft, RoundedCornerShape(10.dp))
+                                            .padding(horizontal = 8.dp, vertical = 5.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(SkIcons.External, null, Modifier.size(15.dp), tint = sk.primary)
+                                    }
+                                }
+
+                                Column {
+                                    Text(
+                                        item.title,
+                                        fontSize = 15.5.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontFamily = IRANSansX,
+                                        color = sk.text,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        item.desc,
+                                        Modifier.padding(top = 4.dp),
+                                        fontSize = 12.5.sp,
+                                        lineHeight = 20.sp,
+                                        fontFamily = IRANSansX,
+                                        color = sk.textMuted,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                        repeat(cols - rowItems.size) {
+                            Spacer(Modifier.weight(1f))
+                        }
+                    }
                 }
             }
         }

@@ -197,248 +197,35 @@ fun CalendarScreen(
     val density = androidx.compose.ui.platform.LocalDensity.current
     val swipeThreshold = with(density) { 48.dp.toPx() }
 
-    Column(
+    val hasGroups = ShiftEngine.activePattern.hasGroups
+    val effectiveFilterGroup = if (!hasGroups) GroupFilter.A else s.filterGroup
+
+    BoxWithConstraints(
         Modifier
             .fillMaxSize()
-            .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp)
+            .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 10.dp)
             .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))
-        /* v2.2.4: bottom clearance owned by the screen again — the floating
-         * glass bar is back (owner reverted the v2.2.3 reserved-slot look) */
     ) {
-        /* v6.0.1 (مالک: «Bring back the banner for the 4 shift view but in
-         * a correct view and elegant beauty»): بنر «شیفت امروز» به نمای «همه»
-         * برگشت — این بار یک کارت شیشه‌ای آراسته با چهار کاشیِ هم‌رنگِ راهنما
-         * (کهربایی/نیلی/زمردی) برای گروه‌های A/B/C/D؛ بنر تک‌گروهی هم سر جایش. */
-        val hasGroups = ShiftEngine.activePattern.hasGroups
-        val effectiveFilterGroup = if (!hasGroups) GroupFilter.A else s.filterGroup
-        if (effectiveFilterGroup != GroupFilter.ALL) {
-            TodayBanner(vm, todayKey, onOpenDay)
-        } else {
-            AllTodayBanner(todayKey, onOpenDay)
-        }
-        Spacer(Modifier.height(10.dp))
+        val isWideDesktop = maxWidth >= 860.dp && s.viewType == ViewType.GRID
 
-        /* ---- month navigation row ----
-         * v2.2.1: چیدمان سامان‌یافته — هر چهار دکمه 40dp، عنوان ماه همیشه با
-         * عرض ثابت (weight) و متن وسط‌چین؛ قبلاً با نام‌های کوتاه (دی) فاصله‌ها
-         * بی‌نظم می‌شد و آیکون یادداشت/نمای جدولی به عنوان چسبیده به نظر می‌رسید.
-         * v2.2.9: ژستِ کشیدن افقی برای عوض کردن ماه روی همین «عنوان» هم نشست —
-         * در نمای جدولی محتوا دیگر کشیده نمی‌شود (جدول اسکرول عمودی دارد). */
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .glass(RoundedCornerShape(16.dp))
-                .tourTarget("month-nav")
-                .then(
-                    Modifier.pointerInput(s.viewYear, s.viewMonth) {
-                        var totalX = 0f
-                        var totalY = 0f
-                        detectDragGestures(
-                            onDragStart = { totalX = 0f; totalY = 0f },
-                            onDragEnd = {
-                                if (kotlin.math.abs(totalX) > swipeThreshold &&
-                                    kotlin.math.abs(totalX) > kotlin.math.abs(totalY) * 1.4f
-                                ) {
-                                    // RTL convention: dx > 0 → next month (same as the PWA)
-                                    goMonth(if (totalX > 0) 1 else -1)
-                                }
-                            },
-                            onDragCancel = { totalX = 0f; totalY = 0f }
-                        ) { change, dragAmount ->
-                            change.consume()
-                            totalX += dragAmount.x
-                            totalY += dragAmount.y
-                        }
-                    }
-                )
-                .padding(5.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            SkIconButton(SkIcons.ChevronRight, "ماه قبل", iconSize = 18) { goMonth(-1) }
-            SkIconButton(SkIcons.Notes, "همه یادداشت‌ها", iconSize = 18) { onOpenNotes() }
-            Box(Modifier.weight(1f).height(40.dp), contentAlignment = Alignment.Center) {
-                TitlePill("${JALALI_MONTHS[s.viewMonth - 1]} ${toPersianDigits(s.viewYear)}") { onOpenMonthPicker() }
+        Column(Modifier.fillMaxSize()) {
+            if (!isWideDesktop) {
+                if (effectiveFilterGroup != GroupFilter.ALL) {
+                    TodayBanner(vm, todayKey, onOpenDay)
+                } else {
+                    AllTodayBanner(todayKey, onOpenDay)
+                }
+                Spacer(Modifier.height(8.dp))
             }
-            SkIconButton(
-                icon = if (s.viewType == ViewType.GRID) SkIcons.Table else SkIcons.Grid,
-                desc = if (s.viewType == ViewType.GRID) "نمای جدولی" else "نمای تقویم",
-                iconSize = 16,
-                modifier = Modifier.tourTarget("view-toggle")
-            ) {
-                haptic.tick()
-                vm.setViewType(if (s.viewType == ViewType.GRID) ViewType.TABLE else ViewType.GRID)
-            }
-            SkIconButton(SkIcons.ChevronLeft, "ماه بعد", iconSize = 18) { goMonth(1) }
-        }
 
-        Spacer(Modifier.height(10.dp))
-
-        /* ---- filter chips + fullscreen + today chip ---- */
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .tourTarget("group-filter"),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            if (!hasGroups) {
-                val skChip = LocalSk.current
-                Box(
-                    Modifier
-                        .clip(RoundedCornerShape(100))
-                        .background(skChip.surfaceStrong)
-                        .border(1.5.dp, skChip.primary, RoundedCornerShape(100))
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
-                ) {
-                    Text(
-                        "شیفت فردی (بدون گروه)",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = IRANSansX,
-                        color = skChip.primary
-                    )
-                }
-            } else GROUP_FILTERS.forEach { g ->
-                val active = effectiveFilterGroup == g
-                val isCompared = g != GroupFilter.ALL && compareGroup == g.toShiftGroup()
-                val label = if (g == GroupFilter.ALL) "همه" else g.toShiftGroup().faLetter()
-                val skChip = LocalSk.current
-                @OptIn(ExperimentalFoundationApi::class)
-                Box(
-                    Modifier
-                        .clip(RoundedCornerShape(100))
-                        .then(
-                            when {
-                                active -> Modifier
-                                    .background(skChip.surfaceStrong)
-                                    .border(1.5.dp, skChip.primary, RoundedCornerShape(100))
-                                isCompared -> Modifier
-                                    .background(skChip.restSoft)
-                                    .border(1.5.dp, skChip.restInk, RoundedCornerShape(100))
-                                else -> Modifier.glass(RoundedCornerShape(100))
-                            }
-                        )
-                        .combinedClickable(
-                            onClick = { setFilter(g) },
-                            onLongClick = {
-                                if (g != GroupFilter.ALL) {
-                                    haptic.tick(18)
-                                    val baseG = (if (s.filterGroup == GroupFilter.ALL) s.myGroup else s.filterGroup).toShiftGroup()
-                                    val targetG = g.toShiftGroup()
-                                    if (compareGroup == targetG || targetG == baseG) {
-                                        compareGroup = null
-                                        ToastCenter.show("حالت مقایسهٔ دو شیفت غیرفعال شد")
-                                    } else {
-                                        compareGroup = targetG
-                                        ToastCenter.show("مقایسه استراحت مشترک: شیفت ${baseG.faLetter()} و شیفت ${targetG.faLetter()}")
-                                    }
-                                }
-                            }
-                        )
-                        .padding(horizontal = 10.dp, vertical = 8.dp)
-                ) {
-                    Text(
-                        label,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = IRANSansX,
-                        color = when {
-                            active -> skChip.primary
-                            isCompared -> skChip.restInk
-                            else -> skChip.textMuted
-                        }
-                    )
-                }
-            }
-            Spacer(Modifier.weight(1f))
-            Box(
-                Modifier
-                    .size(36.dp)
-                    .glass(CircleShape)
-                    .clickableNoRipple {
-                        haptic.tick()
-                        exportMonthMode = s.viewType
-                        exportMonthOpen = true
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(SkIcons.Image, "خروجی تصویر ماه", Modifier.size(15.5.dp), tint = LocalSk.current.primary)
-            }
-            if (s.viewType == ViewType.TABLE) {
-                Box(
-                    Modifier
-                        .size(36.dp)
-                        .glass(CircleShape)
-                        .clickableNoRipple { tableFs = true },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(SkIcons.Expand, "جدول تمام‌صفحه", Modifier.size(16.dp), tint = LocalSk.current.primary)
-                }
-            }
-            if (!isCurrentMonth) {
-                /* v2.2.3: چیپ «امروز» بعد از ~۲.۴ ثانیه (PWA hold) خودش کوچک
-                 * می‌شود — فقط آیکون در قرص گرد، با انیمیشن افقی نرم؛
-                 * دوباره با عوض کردن ماه برمی‌گردد. */
-                Box(
-                    Modifier
-                        .height(36.dp)
-                        .glass(CircleShape)
-                        .clickableNoRipple { goToday() }
-                        .padding(horizontal = 10.5.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(SkIcons.Calendar, "برو به امروز", Modifier.size(15.dp), tint = LocalSk.current.primary)
-                        AnimatedVisibility(
-                            visible = !chipCollapsed,
-                            enter = expandHorizontally(animationSpec = tween(300)) + fadeIn(tween(300)),
-                            exit = shrinkHorizontally(animationSpec = tween(300)) + fadeOut(tween(180))
-                        ) {
-                            Text(
-                                "امروز",
-                                Modifier.padding(start = 6.dp),
-                                fontSize = 13.sp, fontWeight = FontWeight.SemiBold, fontFamily = IRANSansX,
-                                color = LocalSk.current.primary
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        /* ---- legend (grid + ALL) ---- */
-        if (s.viewType == ViewType.GRID && effectiveFilterGroup == GroupFilter.ALL) {
+            /* ---- Top Control Row: Month Navigation + Segmented Group Capsule + Quick Actions ---- */
             Row(
-                Modifier.padding(top = 8.dp, start = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                LegendDot(LocalSk.current.day, "صبح‌کار")
-                if (ShiftEngine.activePattern.eveningCount > 0) {
-                    LegendDot(LocalSk.current.evening, "عصرکار")
-                }
-                LegendDot(LocalSk.current.night, "شب‌کار")
-                LegendDot(LocalSk.current.rest, "استراحت")
-            }
-        }
-
-        Spacer(Modifier.height(8.dp))
-
-        /* ---- swipeable body (RTL: swipe RIGHT → next month, LEFT → prev) ----
-         * v2.2.9: ژست افقی فقط برای «نمای تقویم» روی محتوا می‌ماند؛ نمای جدولی
-         * اسکرول عمودیِ آزاد دارد و تعویض ماه از عنوان انجام می‌شود. */
-        Crossfade(
-            targetState = Triple(s.viewYear, s.viewMonth, s.viewType),
-            animationSpec = tween(180),
-            label = "month",
-            modifier = Modifier.weight(1f)
-        ) { (y, m, vt) ->
-            Box(
                 Modifier
-                    .fillMaxSize()
+                    .fillMaxWidth()
+                    .glass(RoundedCornerShape(16.dp))
+                    .tourTarget("month-nav")
                     .then(
-                        if (vt == ViewType.GRID) Modifier.pointerInput(y, m) {
+                        Modifier.pointerInput(s.viewYear, s.viewMonth) {
                             var totalX = 0f
                             var totalY = 0f
                             detectDragGestures(
@@ -447,7 +234,6 @@ fun CalendarScreen(
                                     if (kotlin.math.abs(totalX) > swipeThreshold &&
                                         kotlin.math.abs(totalX) > kotlin.math.abs(totalY) * 1.4f
                                     ) {
-                                        // RTL convention: dx > 0 → next month (same as the PWA)
                                         goMonth(if (totalX > 0) 1 else -1)
                                     }
                                 },
@@ -457,12 +243,291 @@ fun CalendarScreen(
                                 totalX += dragAmount.x
                                 totalY += dragAmount.y
                             }
-                        } else Modifier
+                        }
                     )
+                    .padding(5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                when (vt) {
-                    ViewType.GRID -> GridView(dayInfo, firstWeekday, effectiveFilterGroup, s.myGroup, compareGroup, todayKey, selectedKey) { k -> selectedKey = k; onOpenDay(k) }
-                    ViewType.TABLE -> TableView(dayInfo, effectiveFilterGroup, s.myGroup, onOpenDay)
+                SkIconButton(SkIcons.ChevronRight, "ماه قبل", iconSize = 18) { goMonth(-1) }
+                SkIconButton(SkIcons.Notes, "همه یادداشت‌ها", iconSize = 18) { onOpenNotes() }
+                Box(Modifier.weight(1f).height(40.dp), contentAlignment = Alignment.Center) {
+                    TitlePill("${JALALI_MONTHS[s.viewMonth - 1]} ${toPersianDigits(s.viewYear)}") { onOpenMonthPicker() }
+                }
+                SkIconButton(
+                    icon = if (s.viewType == ViewType.GRID) SkIcons.Table else SkIcons.Grid,
+                    desc = if (s.viewType == ViewType.GRID) "نمای جدولی" else "نمای تقویم",
+                    iconSize = 16,
+                    modifier = Modifier.tourTarget("view-toggle")
+                ) {
+                    haptic.tick()
+                    vm.setViewType(if (s.viewType == ViewType.GRID) ViewType.TABLE else ViewType.GRID)
+                }
+                SkIconButton(SkIcons.ChevronLeft, "ماه بعد", iconSize = 18) { goMonth(1) }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            /* ---- Unified Segmented Capsule for همه / A / B / C / D + Legend + Action Buttons ---- */
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .tourTarget("group-filter"),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                val skChip = LocalSk.current
+                if (!hasGroups) {
+                    Box(
+                        Modifier
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(skChip.surfaceStrong)
+                            .border(1.5.dp, skChip.primary, RoundedCornerShape(14.dp))
+                            .padding(horizontal = 14.dp, vertical = 8.dp)
+                    ) {
+                        Text(
+                            "شیفت فردی (بدون گروه)",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = IRANSansX,
+                            color = skChip.primary
+                        )
+                    }
+                } else {
+                    /* Unified PWA-style Segmented Capsule for همه / A / B / C / D */
+                    Row(
+                        Modifier
+                            .glass(RoundedCornerShape(14.dp))
+                            .padding(3.5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        GROUP_FILTERS.forEach { g ->
+                            val active = effectiveFilterGroup == g
+                            val isCompared = g != GroupFilter.ALL && compareGroup == g.toShiftGroup()
+                            val label = if (g == GroupFilter.ALL) "همه" else g.toShiftGroup().faLetter()
+                            @OptIn(ExperimentalFoundationApi::class)
+                            Box(
+                                Modifier
+                                    .height(32.dp)
+                                    .widthIn(min = if (g == GroupFilter.ALL) 48.dp else 38.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .then(
+                                        when {
+                                            active -> Modifier
+                                                .background(skChip.primarySoft)
+                                                .border(1.4.dp, skChip.primary, RoundedCornerShape(10.dp))
+                                            isCompared -> Modifier
+                                                .background(skChip.restSoft)
+                                                .border(1.4.dp, skChip.restInk, RoundedCornerShape(10.dp))
+                                            else -> Modifier
+                                        }
+                                    )
+                                    .combinedClickable(
+                                        onClick = { setFilter(g) },
+                                        onLongClick = {
+                                            if (g != GroupFilter.ALL) {
+                                                haptic.tick(18)
+                                                val baseG = (if (s.filterGroup == GroupFilter.ALL) s.myGroup else s.filterGroup).toShiftGroup()
+                                                val targetG = g.toShiftGroup()
+                                                if (compareGroup == targetG || targetG == baseG) {
+                                                    compareGroup = null
+                                                    ToastCenter.show("حالت مقایسهٔ دو شیفت غیرفعال شد")
+                                                } else {
+                                                    compareGroup = targetG
+                                                    ToastCenter.show("مقایسه استراحت مشترک: شیفت ${baseG.faLetter()} و شیفت ${targetG.faLetter()}")
+                                                }
+                                            }
+                                        }
+                                    )
+                                    .padding(horizontal = 12.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    label,
+                                    fontSize = 12.5.sp,
+                                    fontWeight = if (active || isCompared) FontWeight.Black else FontWeight.Bold,
+                                    fontFamily = IRANSansX,
+                                    color = when {
+                                        active -> skChip.primary
+                                        isCompared -> skChip.restInk
+                                        else -> skChip.textMuted
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (s.viewType == ViewType.GRID && effectiveFilterGroup == GroupFilter.ALL) {
+                    Row(
+                        Modifier.padding(start = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        LegendDot(LocalSk.current.day, "صبح‌کار")
+                        if (ShiftEngine.activePattern.eveningCount > 0) {
+                            LegendDot(LocalSk.current.evening, "عصرکار")
+                        }
+                        LegendDot(LocalSk.current.night, "شب‌کار")
+                        LegendDot(LocalSk.current.rest, "استراحت")
+                    }
+                }
+
+                Spacer(Modifier.weight(1f))
+
+                Box(
+                    Modifier
+                        .size(38.dp)
+                        .glass(RoundedCornerShape(12.dp))
+                        .clickableNoRipple {
+                            haptic.tick()
+                            exportMonthMode = s.viewType
+                            exportMonthOpen = true
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(SkIcons.Image, "خروجی تصویر ماه", Modifier.size(16.dp), tint = LocalSk.current.primary)
+                }
+                if (s.viewType == ViewType.TABLE) {
+                    Box(
+                        Modifier
+                            .size(38.dp)
+                            .glass(RoundedCornerShape(12.dp))
+                            .clickableNoRipple { tableFs = true },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(SkIcons.Expand, "جدول تمام‌صفحه", Modifier.size(16.dp), tint = LocalSk.current.primary)
+                    }
+                }
+                if (!isCurrentMonth) {
+                    Box(
+                        Modifier
+                            .height(38.dp)
+                            .glass(RoundedCornerShape(12.dp))
+                            .clickableNoRipple { goToday() }
+                            .padding(horizontal = 12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(SkIcons.Calendar, "برو به امروز", Modifier.size(15.dp), tint = LocalSk.current.primary)
+                            AnimatedVisibility(
+                                visible = !chipCollapsed,
+                                enter = expandHorizontally(animationSpec = tween(300)) + fadeIn(tween(300)),
+                                exit = shrinkHorizontally(animationSpec = tween(300)) + fadeOut(tween(180))
+                            ) {
+                                Text(
+                                    "امروز",
+                                    Modifier.padding(start = 6.dp),
+                                    fontSize = 12.5.sp, fontWeight = FontWeight.Bold, fontFamily = IRANSansX,
+                                    color = LocalSk.current.primary
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            /* ---- Main Content Area (Wide Desktop Side-by-Side OR Stacked) ---- */
+            Crossfade(
+                targetState = Triple(s.viewYear, s.viewMonth, s.viewType),
+                animationSpec = tween(180),
+                label = "month",
+                modifier = Modifier.weight(1f)
+            ) { (y, m, vt) ->
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .then(
+                            if (vt == ViewType.GRID) Modifier.pointerInput(y, m) {
+                                var totalX = 0f
+                                var totalY = 0f
+                                detectDragGestures(
+                                    onDragStart = { totalX = 0f; totalY = 0f },
+                                    onDragEnd = {
+                                        if (kotlin.math.abs(totalX) > swipeThreshold &&
+                                            kotlin.math.abs(totalX) > kotlin.math.abs(totalY) * 1.4f
+                                        ) {
+                                            goMonth(if (totalX > 0) 1 else -1)
+                                        }
+                                    },
+                                    onDragCancel = { totalX = 0f; totalY = 0f }
+                                ) { change, dragAmount ->
+                                    change.consume()
+                                    totalX += dragAmount.x
+                                    totalY += dragAmount.y
+                                }
+                            } else Modifier
+                        )
+                ) {
+                    when {
+                        vt == ViewType.TABLE -> TableView(dayInfo, effectiveFilterGroup, s.myGroup, onOpenDay)
+                        isWideDesktop -> {
+                            val summaryGroup = if (effectiveFilterGroup == GroupFilter.ALL) s.myGroup.toShiftGroup() else effectiveFilterGroup.toShiftGroup()
+                            Row(
+                                Modifier
+                                    .fillMaxSize()
+                                    .padding(bottom = 82.dp),
+                                horizontalArrangement = Arrangement.spacedBy(14.dp)
+                            ) {
+                                /* Right side (in RTL): Calendar Grid filling 100% of height */
+                                Box(
+                                    Modifier
+                                        .weight(1.95f)
+                                        .fillMaxHeight()
+                                        .glass(RoundedCornerShape(22.dp))
+                                        .padding(10.dp)
+                                ) {
+                                    GridView(
+                                        dayInfo = dayInfo,
+                                        firstWeekday = firstWeekday,
+                                        filterGroup = effectiveFilterGroup,
+                                        myGroup = s.myGroup,
+                                        compareGroup = compareGroup,
+                                        todayKey = todayKey,
+                                        selectedKey = selectedKey,
+                                        showBottomSummary = false
+                                    ) { k -> selectedKey = k; onOpenDay(k) }
+                                }
+
+                                /* Left side (in RTL): Today Shift Banner + Large Monthly Summary Cards */
+                                Column(
+                                    Modifier
+                                        .weight(1f)
+                                        .fillMaxHeight(),
+                                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    if (effectiveFilterGroup != GroupFilter.ALL) {
+                                        TodayBanner(vm, todayKey, onOpenDay)
+                                    } else {
+                                        AllTodayBanner(todayKey, onOpenDay)
+                                    }
+
+                                    DesktopMonthlyStatsPanel(
+                                        monthName = JALALI_MONTHS[s.viewMonth - 1],
+                                        year = s.viewYear,
+                                        dayInfo = dayInfo,
+                                        effGroup = summaryGroup,
+                                        myGroup = s.myGroup.toShiftGroup(),
+                                        compareGroup = compareGroup,
+                                        modifier = Modifier.weight(1f).fillMaxWidth()
+                                    )
+                                }
+                            }
+                        }
+                        else -> GridView(
+                            dayInfo = dayInfo,
+                            firstWeekday = firstWeekday,
+                            filterGroup = effectiveFilterGroup,
+                            myGroup = s.myGroup,
+                            compareGroup = compareGroup,
+                            todayKey = todayKey,
+                            selectedKey = selectedKey,
+                            showBottomSummary = true
+                        ) { k -> selectedKey = k; onOpenDay(k) }
+                    }
                 }
             }
         }
@@ -715,24 +780,21 @@ fun GridView(
     compareGroup: ShiftGroup? = null,
     todayKey: String,
     selectedKey: String?,
+    showBottomSummary: Boolean = true,
     onOpenDay: (String) -> Unit
 ) {
     val sk = LocalSk.current
     val cells: List<DayInfo?> = List(firstWeekday) { null } + dayInfo
     val rows = (cells.size + 6) / 7
 
-    /* واکنش‌گرا بر اساس ارتفاع واقعیِ بالای نوار شناور پایین:
-     * چه ماه ۵ ردیفه باشد چه ۶ ردیفه، و چه در نمای تک‌گروهی باشیم چه «همه»
-     * (که ردیف راهنمای رنگ‌ها را هم بالای تقویم دارد)، ارتفاع سلول‌ها طوری
-     * تنظیم می‌شود که تقویم و نوار خلاصهٔ ماه کاملاً بالای نوار پایین جا شوند
-     * و هرگز زیر نوار ناوبری نروند. */
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        val navClearance = 78.dp
-        val headerAndGaps = 22.dp + 4.dp * (rows - 1)
-        val summaryReserved = 48.dp
-        val availForGrid = (maxHeight - navClearance - headerAndGaps - summaryReserved).coerceAtLeast(220.dp)
-        val minCell = 38.dp
-        val cellH = (availForGrid / rows).coerceIn(minCell, 68.dp)
+        val navClearance = if (showBottomSummary) 80.dp else 0.dp
+        val vGap = 5.dp
+        val headerAndGaps = 24.dp + vGap * (rows - 1)
+        val summaryReserved = if (showBottomSummary) 54.dp else 0.dp
+        val availForGrid = (maxHeight - navClearance - headerAndGaps - summaryReserved).coerceAtLeast(240.dp)
+        val minCell = 44.dp
+        val cellH = (availForGrid / rows).coerceIn(minCell, 128.dp)
 
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             Row(Modifier.fillMaxWidth()) {
@@ -741,17 +803,17 @@ fun GridView(
                         w,
                         Modifier.weight(1f),
                         textAlign = TextAlign.Center,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.ExtraBold,
                         fontFamily = IRANSansX,
-                        color = if (i == 6) sk.textMuted else sk.textFaint
+                        color = if (i == 6) sk.holiday else sk.textMuted
                     )
                 }
             }
-            Spacer(Modifier.height(4.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Spacer(Modifier.height(5.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(vGap)) {
                 for (r in 0 until rows) {
-                    Row(Modifier.fillMaxWidth().height(cellH), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(Modifier.fillMaxWidth().height(cellH), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                         for (c in 0 until 7) {
                             val info = cells.getOrNull(r * 7 + c)
                             if (info == null) {
@@ -776,18 +838,176 @@ fun GridView(
                     }
                 }
             }
-            Spacer(Modifier.height(6.dp))
-            val summaryGroup = if (filterGroup == GroupFilter.ALL) myGroup.toShiftGroup() else filterGroup.toShiftGroup()
-            MonthlySummaryStrip(dayInfo = dayInfo, effGroup = summaryGroup, myGroup = myGroup.toShiftGroup(), compareGroup = compareGroup)
-            Spacer(Modifier.height(navClearance))
+            if (showBottomSummary) {
+                Spacer(Modifier.height(8.dp))
+                val summaryGroup = if (filterGroup == GroupFilter.ALL) myGroup.toShiftGroup() else filterGroup.toShiftGroup()
+                MonthlySummaryStrip(dayInfo = dayInfo, effGroup = summaryGroup, myGroup = myGroup.toShiftGroup(), compareGroup = compareGroup)
+                Spacer(Modifier.height(navClearance))
+            }
         }
     }
 }
 
-/**
- * نوار واکنش‌گرای خلاصهٔ شیفت ماه — تک‌خطی و خوش‌فرم تا در ماه‌های ۶ ردیفه و
- * نمای «همه» هرگز زیر نوار ناوبری پایین نرود.
- */
+private fun computeMonthlyCounts(
+    dayInfo: List<DayInfo>,
+    effGroup: ShiftGroup,
+    myGroup: ShiftGroup,
+    compareGroup: ShiftGroup?
+): IntArray {
+    var day = 0
+    var evening = 0
+    var night = 0
+    var officialHolidays = 0
+    var rest = 0
+    var sharedRest = 0
+    dayInfo.forEach { info ->
+        if (info.holiday) officialHolidays++
+        val k = if (effGroup == myGroup && info.swapKind != null) info.swapKind else codeToKind(info.all.getValue(effGroup))
+        when (k) {
+            ShiftKind.DAY -> day++
+            ShiftKind.EVENING -> evening++
+            ShiftKind.NIGHT -> night++
+            ShiftKind.REST -> rest++
+        }
+        if (compareGroup != null) {
+            val k2 = codeToKind(info.all.getValue(compareGroup))
+            if (k == ShiftKind.REST && k2 == ShiftKind.REST) sharedRest++
+        }
+    }
+    return intArrayOf(day, evening, night, officialHolidays, rest, sharedRest)
+}
+
+@Composable
+private fun DesktopMonthlyStatsPanel(
+    monthName: String,
+    year: Int,
+    dayInfo: List<DayInfo>,
+    effGroup: ShiftGroup,
+    myGroup: ShiftGroup,
+    compareGroup: ShiftGroup?,
+    modifier: Modifier = Modifier
+) {
+    val sk = LocalSk.current
+    val counts = remember(dayInfo, effGroup, myGroup, compareGroup) {
+        computeMonthlyCounts(dayInfo, effGroup, myGroup, compareGroup)
+    }
+    val restLabel = if (compareGroup != null) "استراحت مشترک ${effGroup.faLetter()}∩${compareGroup.faLetter()}" else "استراحت"
+    val restValue = if (compareGroup != null) counts[5] else counts[4]
+
+    val items = buildList {
+        add(Triple("صبح‌کار", counts[0], Triple(sk.daySoft, sk.dayInk, SkIcons.Sun)))
+        if (counts[1] > 0) {
+            add(Triple("عصرکار", counts[1], Triple(sk.eveningSoft, sk.eveningInk, SkIcons.Sunset)))
+        }
+        add(Triple("شب‌کار", counts[2], Triple(sk.nightSoft, sk.nightInk, SkIcons.Moon)))
+        add(Triple("تعطیل رسمی", counts[3], Triple(sk.holidaySoft, sk.holiday, SkIcons.Holiday)))
+        add(Triple(restLabel, restValue, Triple(sk.restSoft, sk.restInk, SkIcons.Rest)))
+    }
+
+    Column(
+        modifier
+            .tourTarget("summary-strip")
+            .glass(RoundedCornerShape(22.dp))
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column {
+                Text(
+                    "آمار ماهانه ($monthName ${toPersianDigits(year)})",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = IRANSansX,
+                    color = sk.text
+                )
+                Text(
+                    "مجموع ${toPersianDigits(dayInfo.size)} روز · ${GROUP_FA.getValue(effGroup)}",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = IRANSansX,
+                    color = sk.textMuted
+                )
+            }
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(100))
+                    .background(sk.primarySoft)
+                    .border(1.dp, sk.primary.copy(alpha = 0.4f), RoundedCornerShape(100))
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    GROUP_FA.getValue(effGroup),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = IRANSansX,
+                    color = sk.primary
+                )
+            }
+        }
+
+        Column(
+            Modifier.weight(1f).fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            items.chunked(2).forEach { rowItems ->
+                Row(
+                    Modifier.weight(1f).fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    rowItems.forEach { (label, count, style) ->
+                        val (bg, ink, icon) = style
+                        Column(
+                            Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .clip(RoundedCornerShape(18.dp))
+                                .background(bg)
+                                .border(1.2.dp, ink.copy(alpha = 0.32f), RoundedCornerShape(18.dp))
+                                .padding(14.dp),
+                            verticalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    Modifier
+                                        .size(38.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(ink.copy(alpha = 0.16f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(icon, null, Modifier.size(20.dp), tint = ink)
+                                }
+                                Text(
+                                    "${toPersianDigits(count)} روز",
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Black,
+                                    fontFamily = IRANSansX,
+                                    color = ink
+                                )
+                            }
+                            Text(
+                                label,
+                                fontSize = 13.5.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontFamily = IRANSansX,
+                                color = ink,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun MonthlySummaryStrip(
     dayInfo: List<DayInfo>,
@@ -797,27 +1017,7 @@ private fun MonthlySummaryStrip(
 ) {
     val sk = LocalSk.current
     val counts = remember(dayInfo, effGroup, myGroup, compareGroup) {
-        var day = 0
-        var evening = 0
-        var night = 0
-        var officialHolidays = 0
-        var rest = 0
-        var sharedRest = 0
-        dayInfo.forEach { info ->
-            if (info.holiday) officialHolidays++
-            val k = if (effGroup == myGroup && info.swapKind != null) info.swapKind else codeToKind(info.all.getValue(effGroup))
-            when (k) {
-                ShiftKind.DAY -> day++
-                ShiftKind.EVENING -> evening++
-                ShiftKind.NIGHT -> night++
-                ShiftKind.REST -> rest++
-            }
-            if (compareGroup != null) {
-                val k2 = codeToKind(info.all.getValue(compareGroup))
-                if (k == ShiftKind.REST && k2 == ShiftKind.REST) sharedRest++
-            }
-        }
-        intArrayOf(day, evening, night, officialHolidays, rest, sharedRest)
+        computeMonthlyCounts(dayInfo, effGroup, myGroup, compareGroup)
     }
 
     val restLabel = if (compareGroup != null) "مشترک ${effGroup.faLetter()}∩${compareGroup.faLetter()}" else "استراحت"
@@ -837,9 +1037,9 @@ private fun MonthlySummaryStrip(
         Modifier
             .fillMaxWidth()
             .tourTarget("summary-strip")
-            .glass(RoundedCornerShape(14.dp))
-            .padding(horizontal = 6.dp, vertical = 5.dp),
-        horizontalArrangement = Arrangement.spacedBy(5.dp),
+            .glass(RoundedCornerShape(16.dp))
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         items.forEach { (label, count, style) ->
@@ -847,19 +1047,20 @@ private fun MonthlySummaryStrip(
             Row(
                 Modifier
                     .weight(1f)
-                    .height(30.dp)
-                    .clip(RoundedCornerShape(10.dp))
+                    .height(38.dp)
+                    .clip(RoundedCornerShape(12.dp))
                     .background(bg)
-                    .padding(horizontal = 4.dp),
+                    .border(1.dp, ink.copy(alpha = 0.28f), RoundedCornerShape(12.dp))
+                    .padding(horizontal = 6.dp),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(icon, null, Modifier.size(12.dp), tint = ink)
+                Icon(icon, null, Modifier.size(14.dp), tint = ink)
                 Text(
                     "$label ${toPersianDigits(count)}",
-                    Modifier.padding(start = 4.dp),
-                    fontSize = 10.5.sp,
-                    lineHeight = 12.sp,
+                    Modifier.padding(start = 5.dp),
+                    fontSize = 11.5.sp,
+                    lineHeight = 13.sp,
                     fontWeight = FontWeight.ExtraBold,
                     fontFamily = IRANSansX,
                     color = ink,
@@ -932,7 +1133,7 @@ private fun DayCell(
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
                 toPersianDigits(info.d),
-                fontSize = 14.sp,
+                fontSize = 15.5.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = IRANSansX,
                 color = when {

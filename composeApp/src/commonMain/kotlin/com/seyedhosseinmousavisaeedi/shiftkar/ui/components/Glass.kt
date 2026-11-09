@@ -394,17 +394,17 @@ fun GroupNumBadge(group: ShiftGroup, code: ShiftCode) {
     val ord = toPersianDigits(shiftCodeIndex(code))
     Box(
         Modifier
-            .size(width = 21.dp, height = 14.dp)
-            .clip(RoundedCornerShape(5.dp))
+            .size(width = 25.dp, height = 16.dp)
+            .clip(RoundedCornerShape(6.dp))
             .background(kc.brush)
-            .border(0.6.dp, kc.ink.copy(alpha = 0.28f), RoundedCornerShape(5.dp)),
+            .border(0.6.dp, kc.ink.copy(alpha = 0.28f), RoundedCornerShape(6.dp)),
         contentAlignment = Alignment.Center
     ) {
         Text(
             "${group.faLetter()}$ord",
-            fontSize = 8.sp,
+            fontSize = 8.8.sp,
             fontWeight = FontWeight.Black,
-            lineHeight = 8.5.sp,
+            lineHeight = 9.5.sp,
             fontFamily = IRANSansX,
             color = kc.ink,
             textAlign = TextAlign.Center
@@ -460,19 +460,19 @@ fun ShiftDayOrdinalBadge(
     val numText = if (isSwapped) "*" else toPersianDigits(ordinal)
     Row(
         Modifier
-            .height(19.dp)
-            .clip(RoundedCornerShape(7.dp))
+            .height(22.dp)
+            .clip(RoundedCornerShape(8.dp))
             .background(kc.brush)
-            .border(0.8.dp, kc.ink.copy(alpha = 0.35f), RoundedCornerShape(7.dp))
-            .padding(horizontal = 4.5.dp),
+            .border(0.8.dp, kc.ink.copy(alpha = 0.35f), RoundedCornerShape(8.dp))
+            .padding(horizontal = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(2.dp)
+        horizontalArrangement = Arrangement.spacedBy(3.dp)
     ) {
-        Icon(kindIcon(kind, 11), null, Modifier.size(11.dp), tint = kc.ink)
+        Icon(kindIcon(kind, 13), null, Modifier.size(13.dp), tint = kc.ink)
         Text(
             numText,
-            fontSize = 9.sp,
-            lineHeight = 9.5.sp,
+            fontSize = 10.5.sp,
+            lineHeight = 11.sp,
             fontWeight = FontWeight.Black,
             fontFamily = IRANSansX,
             color = kc.ink

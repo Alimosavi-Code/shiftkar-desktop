@@ -84,7 +84,7 @@ fun main() = application {
     }
 
     val windowState = rememberWindowState(
-        size = DpSize(1040.dp, 760.dp),
+        size = DpSize(1080.dp, 720.dp),
         position = WindowPosition.Aligned(Alignment.Center)
     )
     val iconPainter = remember { BitmapPainter(loadLogoImageBitmap()) }
@@ -233,13 +233,13 @@ fun main() = application {
 
     val dark = effectiveDark(s.themeMode)
 
-    // 1. Main Application Window (Single Native OS Title Bar — No Duplicate Inner Title Bar!)
+    // 1. Main Application Window (Frameless Glass Window with Custom Minimize / Maximize / Close Header Bar)
     Window(
         onCloseRequest = ::exitApplication,
         state = windowState,
         title = "${APP.NAME} — ${formatWeekday(today.jy, today.jm, today.jd)} ${formatJalali(today.jy, today.jm, today.jd)} | $todayGroupSummary",
         icon = iconPainter,
-        undecorated = false,
+        undecorated = true,
         resizable = true,
         onPreviewKeyEvent = { event ->
             if (event.type == KeyEventType.KeyDown) {
@@ -282,14 +282,56 @@ fun main() = application {
         }
     ) {
         ShiftKarTheme(theme = s.theme, dark = dark) {
-            Box(Modifier.fillMaxSize().background(LocalSk.current.background)) {
-                AppRoot(
-                    vm = vm,
-                    escapeTrigger = escapeTrigger,
-                    openNotesTrigger = openNotesTrigger,
-                    requestedTabTrigger = requestedTabTrigger,
-                    requestedDayKeyTrigger = requestedDayKeyTrigger
-                )
+            val skWin = LocalSk.current
+            val isMaximized = windowState.placement == WindowPlacement.Maximized
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .background(skWin.background)
+                    .then(
+                        if (!isMaximized) Modifier.border(1.dp, skWin.border, RoundedCornerShape(0.dp))
+                        else Modifier
+                    )
+            ) {
+                WindowDraggableArea(Modifier.fillMaxWidth()) {
+                    DesktopWindowTitleBar(
+                        today = today,
+                        todayGroupSummary = todayGroupSummary,
+                        myShiftToday = myShiftToday,
+                        isMaximized = isMaximized,
+                        widgetEnabled = s.desktopWidgetEnabled,
+                        onGoToday = {
+                            vm.setViewMonth(today.jy, today.jm)
+                            tabTriggerSeq += 1
+                            requestedTabTrigger = tabTriggerSeq to TabId.CALENDAR
+                        },
+                        onToggleWidget = {
+                            vm.setDesktopWidgetEnabled(!s.desktopWidgetEnabled)
+                        },
+                        onMinimize = {
+                            windowState.isMinimized = true
+                        },
+                        onToggleMaximize = {
+                            windowState.placement = if (windowState.placement == WindowPlacement.Maximized) {
+                                WindowPlacement.Floating
+                            } else {
+                                WindowPlacement.Maximized
+                            }
+                        },
+                        onClose = {
+                            exitApplication()
+                        }
+                    )
+                }
+                Box(Modifier.weight(1f).fillMaxWidth()) {
+                    AppRoot(
+                        vm = vm,
+                        escapeTrigger = escapeTrigger,
+                        openNotesTrigger = openNotesTrigger,
+                        requestedTabTrigger = requestedTabTrigger,
+                        requestedDayKeyTrigger = requestedDayKeyTrigger
+                    )
+                }
             }
         }
     }
@@ -877,5 +919,210 @@ private fun DesktopMiniWidgetCard(
                 }
             }
         }
+    }
+}
+
+
+@Composable
+private fun DesktopWindowTitleBar(
+    today: JalaliDate,
+    todayGroupSummary: String,
+    myShiftToday: ShiftInfo,
+    isMaximized: Boolean,
+    widgetEnabled: Boolean,
+    onGoToday: () -> Unit,
+    onToggleWidget: () -> Unit,
+    onMinimize: () -> Unit,
+    onToggleMaximize: () -> Unit,
+    onClose: () -> Unit
+) {
+    val sk = LocalSk.current
+    val (shiftBg, shiftInk) = when (myShiftToday.type) {
+        ShiftKind.DAY -> sk.daySoft to sk.dayInk
+        ShiftKind.EVENING -> sk.eveningSoft to sk.eveningInk
+        ShiftKind.NIGHT -> sk.nightSoft to sk.nightInk
+        ShiftKind.REST -> sk.restSoft to sk.restInk
+    }
+
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .height(42.dp)
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(
+                            sk.sheetSolid.copy(alpha = 0.96f),
+                            sk.surfaceStrong.copy(alpha = 0.92f),
+                            sk.sheetSolid.copy(alpha = 0.96f)
+                        )
+                    )
+                )
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            // Right side (RTL start): Brand + Today Date + Shift Pill
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Box(
+                    Modifier
+                        .size(26.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(sk.primarySoft)
+                        .border(1.dp, sk.primary.copy(alpha = 0.45f), RoundedCornerShape(8.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(SkIcons.Calendar, null, Modifier.size(14.dp), tint = sk.primary)
+                }
+                Text(
+                    APP.NAME,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = IRANSansX,
+                    color = sk.text
+                )
+                Box(
+                    Modifier
+                        .height(26.dp)
+                        .clip(RoundedCornerShape(100))
+                        .background(sk.surface)
+                        .border(1.dp, sk.borderSoft, RoundedCornerShape(100))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) { onGoToday() }
+                        .pointerHoverIcon(PointerIcon.Hand)
+                        .padding(horizontal = 10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "${formatWeekday(today.jy, today.jm, today.jd)} ${formatJalali(today.jy, today.jm, today.jd)}",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = IRANSansX,
+                        color = sk.textMuted
+                    )
+                }
+                Box(
+                    Modifier
+                        .height(26.dp)
+                        .clip(RoundedCornerShape(100))
+                        .background(shiftBg)
+                        .border(1.dp, shiftInk.copy(alpha = 0.35f), RoundedCornerShape(100))
+                        .padding(horizontal = 10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        todayGroupSummary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Black,
+                        fontFamily = IRANSansX,
+                        color = shiftInk
+                    )
+                }
+            }
+
+            // Left side (RTL end): Desktop Widget Toggle + Minimize, Maximize/Restore, Close buttons
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Box(
+                    Modifier
+                        .height(28.dp)
+                        .clip(RoundedCornerShape(9.dp))
+                        .background(if (widgetEnabled) sk.primarySoft else sk.surface)
+                        .border(
+                            1.dp,
+                            if (widgetEnabled) sk.primary else sk.borderSoft,
+                            RoundedCornerShape(9.dp)
+                        )
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) { onToggleWidget() }
+                        .pointerHoverIcon(PointerIcon.Hand)
+                        .padding(horizontal = 10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        if (widgetEnabled) "ویجت رومیزی: فعال" else "ویجت رومیزی",
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = IRANSansX,
+                        color = if (widgetEnabled) sk.primary else sk.textMuted
+                    )
+                }
+
+                Spacer(Modifier.width(4.dp))
+
+                // Minimize button (—)
+                WindowControlButton(
+                    label = "—",
+                    tooltip = "کوچک‌کردن پنجره (Minimize)",
+                    bg = sk.surface,
+                    borderCol = sk.borderSoft,
+                    fg = sk.text,
+                    onClick = onMinimize
+                )
+
+                // Maximize / Restore button (□ / ❐)
+                WindowControlButton(
+                    label = if (isMaximized) "❐" else "□",
+                    tooltip = if (isMaximized) "بازگردانی اندازه پنجره" else "بزرگ‌کردن پنجره (Maximize)",
+                    bg = sk.surface,
+                    borderCol = sk.borderSoft,
+                    fg = sk.text,
+                    onClick = onToggleMaximize
+                )
+
+                // Close button (✕)
+                WindowControlButton(
+                    label = "✕",
+                    tooltip = "بستن برنامه",
+                    bg = sk.holidaySoft,
+                    borderCol = sk.holiday.copy(alpha = 0.45f),
+                    fg = sk.holiday,
+                    onClick = onClose
+                )
+            }
+        }
+    }
+    Box(Modifier.fillMaxWidth().height(1.dp).background(sk.borderSoft))
+}
+
+@Composable
+private fun WindowControlButton(
+    label: String,
+    tooltip: String,
+    bg: Color,
+    borderCol: Color,
+    fg: Color,
+    onClick: () -> Unit
+) {
+    Box(
+        Modifier
+            .size(width = 32.dp, height = 28.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(bg)
+            .border(1.dp, borderCol, RoundedCornerShape(8.dp))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) { onClick() }
+            .pointerHoverIcon(PointerIcon.Hand),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            label,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = IRANSansX,
+            color = fg,
+            textAlign = TextAlign.Center
+        )
     }
 }

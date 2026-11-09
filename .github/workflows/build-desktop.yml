@@ -249,18 +249,19 @@ jobs:
             echo "C:\Program Files (x86)\Inno Setup 6" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           }
 
-      - name: Package Windows x64 MSI, EXE & Portable ZIP
+      - name: Package Windows x64 MSI, Inno Setup EXE & Portable ZIP
         shell: powershell
         run: |
-          .\gradlew.bat :composeApp:packageMsi :composeApp:packageExe :composeApp:createDistributable --no-daemon
+          .\gradlew.bat :composeApp:packageMsi :composeApp:createDistributable --no-daemon
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           New-Item -ItemType Directory -Force -Path "dist\windows-x64" | Out-Null
-          Get-ChildItem "composeApp\build\compose\binaries\main\msi\*.msi" | ForEach-Object {
+          Get-ChildItem "composeApp\build\compose\binaries\main\msi\*.msi" -ErrorAction SilentlyContinue | ForEach-Object {
             Copy-Item $_.FullName -Destination "dist\windows-x64\ShiftKar-$($env:APP_VERSION)-windows-x64.msi"
           }
-          Get-ChildItem "composeApp\build\compose\binaries\main\exe\*.exe" | ForEach-Object {
-            Copy-Item $_.FullName -Destination "dist\windows-x64\ShiftKar-$($env:APP_VERSION)-windows-x64-setup.exe"
-          }
+          $appDir = (Get-ChildItem "composeApp\build\compose\binaries\main\app" -Directory | Select-Object -First 1).FullName
+          $outDir = Join-Path (Get-Location).Path "dist\windows-x64"
+          ISCC.exe "/DMyAppVersion=$($env:APP_VERSION)" "/DMyArch=x64" "/DMySourceDir=$appDir" "/O$outDir" "/FShiftKar-$($env:APP_VERSION)-windows-x64-setup" "composeApp\packaging\ShiftKar.iss"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Compress-Archive -Path "composeApp\build\compose\binaries\main\app\*" -DestinationPath "dist\windows-x64\ShiftKar-$($env:APP_VERSION)-windows-x64-portable.zip" -Force
 
       - name: Upload Windows x64 Artifacts
@@ -304,16 +305,17 @@ jobs:
             echo "C:\Program Files (x86)\Inno Setup 6" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           }
 
-      - name: Package Windows ARM64 Distributable, EXE & MSI
+      - name: Package Windows ARM64 Distributable, Inno Setup EXE & MSI
         shell: powershell
         run: |
-          .\gradlew.bat :composeApp:packageMsi :composeApp:packageExe :composeApp:createDistributable --no-daemon
+          .\gradlew.bat :composeApp:packageMsi :composeApp:createDistributable --no-daemon
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           New-Item -ItemType Directory -Force -Path "dist\windows-arm64" | Out-Null
           Compress-Archive -Path "composeApp\build\compose\binaries\main\app\*" -DestinationPath "dist\windows-arm64\ShiftKar-$($env:APP_VERSION)-windows-arm64-portable.zip" -Force
-          Get-ChildItem "composeApp\build\compose\binaries\main\exe\*.exe" -ErrorAction SilentlyContinue | ForEach-Object {
-            Copy-Item $_.FullName -Destination "dist\windows-arm64\ShiftKar-$($env:APP_VERSION)-windows-arm64-setup.exe"
-          }
+          $appDir = (Get-ChildItem "composeApp\build\compose\binaries\main\app" -Directory | Select-Object -First 1).FullName
+          $outDir = Join-Path (Get-Location).Path "dist\windows-arm64"
+          ISCC.exe "/DMyAppVersion=$($env:APP_VERSION)" "/DMyArch=arm64" "/DMySourceDir=$appDir" "/O$outDir" "/FShiftKar-$($env:APP_VERSION)-windows-arm64-setup" "composeApp\packaging\ShiftKar.iss"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Get-ChildItem "composeApp\build\compose\binaries\main\msi\*.msi" -ErrorAction SilentlyContinue | ForEach-Object {
             Copy-Item $_.FullName -Destination "dist\windows-arm64\ShiftKar-$($env:APP_VERSION)-windows-arm64.msi"
           }
