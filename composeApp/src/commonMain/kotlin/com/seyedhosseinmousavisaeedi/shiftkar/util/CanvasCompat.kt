@@ -1,5 +1,7 @@
 package com.seyedhosseinmousavisaeedi.shiftkar.util
 
+import kotlin.concurrent.Volatile
+
 import androidx.compose.ui.graphics.ImageBitmap
 import com.seyedhosseinmousavisaeedi.shiftkar.platform.decodePngToImageBitmap
 import com.seyedhosseinmousavisaeedi.shiftkar.platform.loadBundledFontBytes

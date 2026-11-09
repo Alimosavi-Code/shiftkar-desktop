@@ -1,5 +1,7 @@
 package com.seyedhosseinmousavisaeedi.shiftkar.engine
 
+import kotlin.concurrent.Volatile
+
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.util.concurrent.ConcurrentHashMap

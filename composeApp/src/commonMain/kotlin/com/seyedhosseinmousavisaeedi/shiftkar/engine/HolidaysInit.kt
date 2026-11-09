@@ -1,5 +1,7 @@
 package com.seyedhosseinmousavisaeedi.shiftkar.engine
 
+import kotlin.concurrent.Volatile
+
 import com.seyedhosseinmousavisaeedi.shiftkar.platform.httpGetText
 import com.seyedhosseinmousavisaeedi.shiftkar.platform.readAppStorageText
 import com.seyedhosseinmousavisaeedi.shiftkar.platform.readBundledEventsJson

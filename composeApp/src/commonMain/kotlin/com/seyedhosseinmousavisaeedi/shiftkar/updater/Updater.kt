@@ -35,8 +35,18 @@ object AppUpdateConfig {
     const val GITHUB_RELEASES_URL =
         "https://github.com/Alimosavi-Code/shiftkar-desktop/releases/latest"
 
-    const val CURRENT_VERSION_CODE = 66
+    const val CURRENT_VERSION_CODE = 75
     const val CURRENT_VERSION_NAME = APP.VERSION
+
+    fun toRawGitHubUrl(raw: String): String {
+        val u = raw.trim()
+        val blobRegex = Regex("^https?://github\\.com/([^/]+)/([^/]+)/blob/([^/]+)/(.*)$", RegexOption.IGNORE_CASE)
+        val m = blobRegex.find(u)
+        if (m != null) {
+            return "https://raw.githubusercontent.com/${m.groupValues[1]}/${m.groupValues[2]}/${m.groupValues[3]}/${m.groupValues[4]}"
+        }
+        return u
+    }
 }
 
 @Serializable

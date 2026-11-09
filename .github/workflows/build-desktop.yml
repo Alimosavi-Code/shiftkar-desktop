@@ -42,10 +42,10 @@ jobs:
         run: chmod +x gradlew
 
       - name: Run Desktop Unit Tests
-        run: ./gradlew :composeApp:desktopTest --stacktrace
+        run: ./gradlew :composeApp:desktopTest
 
       - name: Package Linux x64 DEB, RPM & Distributable App
-        run: ./gradlew :composeApp:packageDeb :composeApp:packageRpm :composeApp:createDistributable --stacktrace
+        run: ./gradlew :composeApp:packageDeb :composeApp:packageRpm :composeApp:createDistributable
 
       - name: Standardize Linux x64 Filenames & Build .AppImage
         run: |
@@ -109,7 +109,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Package Linux ARM64 DEB, RPM & Distributable App
-        run: ./gradlew :composeApp:packageDeb :composeApp:packageRpm :composeApp:createDistributable --stacktrace
+        run: ./gradlew :composeApp:packageDeb :composeApp:packageRpm :composeApp:createDistributable
 
       - name: Standardize Linux ARM64 Filenames & Build .AppImage
         run: |
@@ -167,7 +167,7 @@ jobs:
 
       - name: Package macOS Apple Silicon DMG
         run: |
-          ./gradlew :composeApp:packageDmg --stacktrace --no-daemon || (sleep 5 && ./gradlew :composeApp:packageDmg --stacktrace --no-daemon)
+          ./gradlew :composeApp:packageDmg --no-daemon || (sleep 5 && ./gradlew :composeApp:packageDmg --no-daemon)
           mkdir -p dist/macos-arm64
           for f in composeApp/build/compose/binaries/main/dmg/*.dmg; do
             cp "$f" "dist/macos-arm64/ShiftKar-${APP_VERSION}-macos-arm64.dmg"
@@ -202,7 +202,7 @@ jobs:
 
       - name: Package macOS Intel x64 DMG
         run: |
-          ./gradlew :composeApp:packageDmg --stacktrace --no-daemon || (sleep 5 && ./gradlew :composeApp:packageDmg --stacktrace --no-daemon)
+          ./gradlew :composeApp:packageDmg --no-daemon || (sleep 5 && ./gradlew :composeApp:packageDmg --no-daemon)
           mkdir -p dist/macos-x64
           for f in composeApp/build/compose/binaries/main/dmg/*.dmg; do
             cp "$f" "dist/macos-x64/ShiftKar-${APP_VERSION}-macos-x64.dmg"
@@ -252,7 +252,7 @@ jobs:
       - name: Package Windows x64 MSI, EXE & Portable ZIP
         shell: powershell
         run: |
-          .\gradlew.bat :composeApp:packageMsi :composeApp:packageExe :composeApp:createDistributable --stacktrace --no-daemon
+          .\gradlew.bat :composeApp:packageMsi :composeApp:packageExe :composeApp:createDistributable --no-daemon
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           New-Item -ItemType Directory -Force -Path "dist\windows-x64" | Out-Null
           Get-ChildItem "composeApp\build\compose\binaries\main\msi\*.msi" | ForEach-Object {
@@ -307,7 +307,7 @@ jobs:
       - name: Package Windows ARM64 Distributable, EXE & MSI
         shell: powershell
         run: |
-          .\gradlew.bat :composeApp:packageMsi :composeApp:packageExe :composeApp:createDistributable --stacktrace --no-daemon
+          .\gradlew.bat :composeApp:packageMsi :composeApp:packageExe :composeApp:createDistributable --no-daemon
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           New-Item -ItemType Directory -Force -Path "dist\windows-arm64" | Out-Null
           Compress-Archive -Path "composeApp\build\compose\binaries\main\app\*" -DestinationPath "dist\windows-arm64\ShiftKar-$($env:APP_VERSION)-windows-arm64-portable.zip" -Force

@@ -630,7 +630,7 @@ private fun DesktopMiniWidgetCard(
     onCloseWidget: () -> Unit
 ) {
     val sk = LocalSk.current
-    val alpha = settings.widgetOpacity.coerceIn(0.45f, 1.0f)
+    val alpha = (settings.widgetOpacity / 100f).coerceIn(0.45f, 1.0f)
     val isHolidayToday = remember(today) { Holidays.isHoliday(today.jy, today.jm, today.jd) }
     val greg = remember(today) { toGregorian(today.jy, today.jm, today.jd) }
     val hijri = remember(today) { toHijri(today.jy, today.jm, today.jd) }

@@ -205,3 +205,15 @@ fun todayJalaali(): JalaliDate {
     val now = java.time.LocalDate.now()
     return toJalaali(now.year, now.monthValue, now.dayOfMonth)
 }
+
+
+/**
+ * Compatibility helper converting a Jalali date directly to HijriDate.
+ */
+fun toHijri(jy: Int, jm: Int, jd: Int): HijriDate = jdnToIslamic(jalaliToJdn(jy, jm, jd))
+
+/**
+ * Formats a Hijri date (hy/hm/hd) with Persian digits and month name.
+ */
+fun formatHijri(hy: Int, hm: Int, hd: Int): String =
+    "${toPersianDigits(hd)} ${HIJRI_MONTHS[(hm - 1).coerceIn(0, 11)]} ${toPersianDigits(hy)}"

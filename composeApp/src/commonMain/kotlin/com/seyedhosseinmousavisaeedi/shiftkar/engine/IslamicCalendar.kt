@@ -1,5 +1,7 @@
 package com.seyedhosseinmousavisaeedi.shiftkar.engine
 
+import kotlin.concurrent.Volatile
+
 import kotlin.math.floor
 import kotlin.math.sin
 import kotlin.math.cos
@@ -255,8 +257,7 @@ object IslamicCalendar {
      *  - `yearMonths`: 12-element list of (29 or 30) for any Hijri year (including 1450+)
      *  - `monthLengths`: single-month override `"YYYY-MM" -> 29 or 30`
      */
-    @Synchronized
-    fun rebuildWithOverrides(
+        fun rebuildWithOverrides(
         yearMonths: Map<Int, List<Int>>,
         monthLengths: Map<String, Int>
     ) {

@@ -1,5 +1,7 @@
 package com.seyedhosseinmousavisaeedi.shiftkar.engine
 
+import kotlin.concurrent.Volatile
+
 /**
  * Shift calculation engine (v6.5.4):
  *  - Supports Morning ( صبح‌کار / M1..M24 ), Evening ( عصرکار / E1..E24 ),
