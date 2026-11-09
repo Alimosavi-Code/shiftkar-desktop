@@ -100,7 +100,7 @@ fun ShiftKarTheme(
     ) {
         MaterialTheme(
             colorScheme = m3(palette),
-            typography = ShiftKarTypography(),
+            typography = ShiftKarTypography,
             content = content
         )
     }

@@ -58,7 +58,7 @@ private fun addDaysJalali(j: JalaliDate, delta: Int): JalaliDate {
 }
 
 @Composable
-fun ShiftManagerScreen(vm: AppViewModel) {
+fun ShiftManagerScreen(vm: AppViewModel, onOpenDay: (String) -> Unit = {}) {
     val sk = LocalSk.current
     val s = vm.settings.collectAsState().value
     val haptic = rememberHaptics(s.hapticOn)

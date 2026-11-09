@@ -449,6 +449,37 @@ fun ShiftDayOrderBadge(
     }
 }
 
+
+@Composable
+fun ShiftDayOrdinalBadge(
+    kind: ShiftKind,
+    ordinal: Int,
+    isSwapped: Boolean = false
+) {
+    val kc = kindColors(kind)
+    val numText = if (isSwapped) "*" else toPersianDigits(ordinal)
+    Row(
+        Modifier
+            .height(19.dp)
+            .clip(RoundedCornerShape(7.dp))
+            .background(kc.brush)
+            .border(0.8.dp, kc.ink.copy(alpha = 0.35f), RoundedCornerShape(7.dp))
+            .padding(horizontal = 4.5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        Icon(kindIcon(kind, 11), null, Modifier.size(11.dp), tint = kc.ink)
+        Text(
+            numText,
+            fontSize = 9.sp,
+            lineHeight = 9.5.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = IRANSansX,
+            color = kc.ink
+        )
+    }
+}
+
 data class KindColors(
     val bg: Color,
     val bgEnd: Color,
