@@ -927,7 +927,7 @@ private fun DesktopMiniWidgetCard(
 private fun DesktopWindowTitleBar(
     today: JalaliDate,
     todayGroupSummary: String,
-    myShiftToday: ShiftInfo,
+    myShiftToday: ShiftResult,
     isMaximized: Boolean,
     widgetEnabled: Boolean,
     onGoToday: () -> Unit,
