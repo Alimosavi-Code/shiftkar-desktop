@@ -3,6 +3,8 @@ package com.seyedhosseinmousavisaeedi.shiftkar.ui.manager
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -445,534 +447,681 @@ private fun ShiftPatternsSection(vm: AppViewModel, s: AppSettings) {
         }
     }
 
-    /* Popup Modal SkSheet for Editing / Creating a Shift Pattern */
-    SkSheet(
-        visible = builderOpen,
-        onDismiss = { builderOpen = false },
-        title = if (editingPatternId != null) "ویرایش الگوی «$customName»" else "ساخت سیستم شیفت سفارشی"
-    ) {
-        Column(
-            Modifier.padding(horizontal = 16.dp).padding(bottom = 28.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+    /* Large, Well-Proportioned Desktop Popup Modal for Editing / Creating a Shift Pattern */
+    if (builderOpen) {
+        Dialog(
+            onDismissRequest = { builderOpen = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
         ) {
-
-                if (editingPatternId != null) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(Color(0xB0060B18))
+                    .clickable(
+                        indication = null,
+                        interactionSource = remember { MutableInteractionSource() }
+                    ) { builderOpen = false }
+                    .padding(horizontal = 28.dp, vertical = 24.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    Modifier
+                        .fillMaxWidth(0.92f)
+                        .widthIn(min = 640.dp, max = 940.dp)
+                        .heightIn(max = 860.dp)
+                        .clip(RoundedCornerShape(28.dp))
+                        .background(sk.sheetSolid)
+                        .border(1.5.dp, sk.border, RoundedCornerShape(28.dp))
+                        .clickable(
+                            indication = null,
+                            interactionSource = remember { MutableInteractionSource() }
+                        ) { /* consume clicks inside dialog */ }
+                ) {
+                    /* ---- 1. Pinned Popup Header ---- */
                     Row(
                         Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(sk.primarySoft)
-                            .border(1.dp, sk.primary.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
-                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                            .background(sk.surfaceStrong)
+                            .padding(horizontal = 22.dp, vertical = 16.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Text(
-                            if (ShiftEngine.isBuiltInPreset(editingPatternId!!)) "در حال ویرایش الگوی آماده"
-                            else "در حال ویرایش الگوی سفارشی",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Black,
-                            fontFamily = IRANSansX,
-                            color = sk.primary
-                        )
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            if (ShiftEngine.isPresetModified(editingPatternId!!, s.customPatterns)) {
+                        Box(
+                            Modifier
+                                .size(42.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(sk.primarySoft)
+                                .border(1.dp, sk.primary.copy(alpha = 0.45f), RoundedCornerShape(14.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(SkIcons.Palette, null, Modifier.size(21.dp), tint = sk.primary)
+                        }
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                if (editingPatternId != null) "ویرایش الگوی «$customName»" else "ساخت سیستم شیفت سفارشی",
+                                fontSize = 17.5.sp,
+                                fontWeight = FontWeight.Black,
+                                fontFamily = IRANSansX,
+                                color = sk.text,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                if (editingPatternId != null) {
+                                    if (ShiftEngine.isBuiltInPreset(editingPatternId!!)) "در حال ویرایش الگوی استاندارد آماده"
+                                    else "در حال ویرایش الگوی سفارشی شما"
+                                } else {
+                                    "تنظیم نام، گروه‌های کاری، تعداد روزهای هر نوبت و تطبیق با تاریخ امروز"
+                                },
+                                fontSize = 11.5.sp,
+                                fontFamily = IRANSansX,
+                                color = sk.textMuted
+                            )
+                        }
+
+                        if (editingPatternId != null) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                if (ShiftEngine.isPresetModified(editingPatternId!!, s.customPatterns)) {
+                                    Box(
+                                        Modifier
+                                            .height(36.dp)
+                                            .clip(RoundedCornerShape(11.dp))
+                                            .background(sk.holidaySoft)
+                                            .border(1.dp, sk.holiday.copy(alpha = 0.45f), RoundedCornerShape(11.dp))
+                                            .clickableNoRipple {
+                                                haptic.tick()
+                                                val target = ShiftEngine.resolvePattern(editingPatternId!!, s.customPatterns)
+                                                presetPendingRestore = target
+                                            }
+                                            .padding(horizontal = 12.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            "بازگردانی پیش‌فرض",
+                                            fontSize = 11.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            fontFamily = IRANSansX,
+                                            color = sk.holiday
+                                        )
+                                    }
+                                }
                                 Box(
                                     Modifier
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(sk.holidaySoft)
+                                        .height(36.dp)
+                                        .clip(RoundedCornerShape(11.dp))
+                                        .background(sk.surface)
+                                        .border(1.dp, sk.borderSoft, RoundedCornerShape(11.dp))
                                         .clickableNoRipple {
                                             haptic.tick()
-                                            val target = ShiftEngine.resolvePattern(editingPatternId!!, s.customPatterns)
-                                            presetPendingRestore = target
+                                            editingPatternId = null
+                                            customName = "شیفت سفارشی من"
                                         }
-                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                        .padding(horizontal = 12.dp),
+                                    contentAlignment = Alignment.Center
                                 ) {
                                     Text(
-                                        "بازگردانی پیش‌فرض",
-                                        fontSize = 10.sp,
+                                        "ساخت الگوی جدید",
+                                        fontSize = 11.5.sp,
                                         fontWeight = FontWeight.Bold,
                                         fontFamily = IRANSansX,
-                                        color = sk.holiday
+                                        color = sk.textMuted
                                     )
                                 }
                             }
+                        }
+
+                        SheetButton(icon = SkIcons.Close, desc = "بستن") { builderOpen = false }
+                    }
+
+                    Box(Modifier.fillMaxWidth().height(1.dp).background(sk.borderSoft))
+
+                    /* ---- 2. Spacious Scrollable Body (Responsive 2-Column on Desktop) ---- */
+                    BoxWithConstraints(
+                        Modifier
+                            .fillMaxWidth()
+                            .weight(1f, fill = false)
+                    ) {
+                        val isTwoCol = maxWidth >= 660.dp
+
+                        val nameAndGroupsContent: @Composable ColumnScope.() -> Unit = {
+                            Text(
+                                if (editingPatternId != null) "نام الگو:" else "نام الگوی سفارشی:",
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontFamily = IRANSansX,
+                                color = sk.textMuted
+                            )
                             Box(
                                 Modifier
-                                    .clip(RoundedCornerShape(8.dp))
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(16.dp))
                                     .background(sk.surfaceStrong)
-                                    .clickableNoRipple {
-                                        haptic.tick()
-                                        editingPatternId = null
-                                        customName = "شیفت سفارشی من"
-                                    }
-                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                                    .border(1.2.dp, sk.border, RoundedCornerShape(16.dp))
+                                    .padding(horizontal = 16.dp, vertical = 13.dp)
+                            ) {
+                                BasicTextField(
+                                    value = customName,
+                                    onValueChange = { if (it.length <= 40) customName = it },
+                                    singleLine = true,
+                                    textStyle = TextStyle(
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontFamily = IRANSansX,
+                                        color = sk.text
+                                    ),
+                                    cursorBrush = SolidColor(sk.primary),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+
+                            Spacer(Modifier.height(4.dp))
+
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    "ساخت الگوی جدید",
-                                    fontSize = 10.sp,
+                                    "گروه‌های شیفت (حذف، ویرایش یا افزودن):",
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontFamily = IRANSansX,
+                                    color = sk.textMuted
+                                )
+                                Box(
+                                    Modifier
+                                        .clip(RoundedCornerShape(100))
+                                        .background(sk.primarySoft)
+                                        .padding(horizontal = 10.dp, vertical = 3.dp)
+                                ) {
+                                    Text(
+                                        if (noGroupMode) "شیفت فردی (بدون گروه)" else "${toPersianDigits(groupCells.size)} گروه فعال",
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Black,
+                                        fontFamily = IRANSansX,
+                                        color = sk.primary
+                                    )
+                                }
+                            }
+
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                val quickPresets: List<Triple<String, Boolean, List<String>>> = listOf(
+                                    Triple("چهار گروه (A..D)", false, listOf("A", "B", "C", "D")),
+                                    Triple("سه گروه (A..C)", false, listOf("A", "B", "C")),
+                                    Triple("دو گروه (A, B)", false, listOf("A", "B")),
+                                    Triple("گروه‌های E..H", false, listOf("E", "F", "G", "H")),
+                                    Triple("الف تا د", false, listOf("الف", "ب", "ج", "د")),
+                                    Triple("بدون گروه (فردی)", true, emptyList())
+                                )
+                                quickPresets.forEach { (lbl, isNoGrp, presetList) ->
+                                    val active = (noGroupMode && isNoGrp) || (!noGroupMode && !isNoGrp && groupCells == presetList)
+                                    Box(
+                                        Modifier
+                                            .height(36.dp)
+                                            .clip(RoundedCornerShape(11.dp))
+                                            .background(if (active) sk.primarySoft else sk.surface)
+                                            .border(
+                                                width = if (active) 1.5.dp else 1.dp,
+                                                color = if (active) sk.primary else sk.borderSoft,
+                                                shape = RoundedCornerShape(11.dp)
+                                            )
+                                            .clickableNoRipple {
+                                                haptic.tick()
+                                                if (isNoGrp) {
+                                                    noGroupMode = true
+                                                } else {
+                                                    noGroupMode = false
+                                                    groupCells = presetList
+                                                }
+                                            }
+                                            .padding(horizontal = 12.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            lbl,
+                                            fontSize = 11.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            fontFamily = IRANSansX,
+                                            color = if (active) sk.primary else sk.textMuted
+                                        )
+                                    }
+                                }
+                            }
+
+                            AnimatedVisibility(visible = !noGroupMode) {
+                                Column(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .background(sk.surface)
+                                        .border(1.dp, sk.borderSoft, RoundedCornerShape(16.dp))
+                                        .padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    val allItemsCount = groupCells.size + (if (groupCells.size < 8) 1 else 0)
+                                    val rows = (0 until allItemsCount).chunked(4)
+                                    rows.forEach { rowIndices ->
+                                        Row(
+                                            Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            rowIndices.forEach { cellIdx ->
+                                                if (cellIdx < groupCells.size) {
+                                                    val curVal = groupCells[cellIdx]
+                                                    Column(
+                                                        Modifier
+                                                            .weight(1f)
+                                                            .height(66.dp)
+                                                            .clip(RoundedCornerShape(13.dp))
+                                                            .background(sk.surfaceStrong)
+                                                            .border(1.dp, sk.primary.copy(alpha = 0.45f), RoundedCornerShape(13.dp))
+                                                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                                        verticalArrangement = Arrangement.SpaceBetween
+                                                    ) {
+                                                        Row(
+                                                            Modifier.fillMaxWidth(),
+                                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            Text(
+                                                                "گروه ${toPersianDigits(cellIdx + 1)}",
+                                                                fontSize = 10.sp,
+                                                                fontWeight = FontWeight.Bold,
+                                                                fontFamily = IRANSansX,
+                                                                color = sk.textMuted
+                                                            )
+                                                            Box(
+                                                                Modifier
+                                                                    .size(20.dp)
+                                                                    .clip(CircleShape)
+                                                                    .background(sk.holidaySoft)
+                                                                    .clickableNoRipple {
+                                                                        haptic.tick()
+                                                                        if (groupCells.size <= 1) {
+                                                                            noGroupMode = true
+                                                                        } else {
+                                                                            groupCells = groupCells.toMutableList().also { it.removeAt(cellIdx) }
+                                                                        }
+                                                                    },
+                                                                contentAlignment = Alignment.Center
+                                                            ) {
+                                                                Icon(SkIcons.Close, "حذف گروه", Modifier.size(11.dp), tint = sk.holiday)
+                                                            }
+                                                        }
+                                                        BasicTextField(
+                                                            value = curVal,
+                                                            onValueChange = { newTxt ->
+                                                                if (newTxt.length <= 6) {
+                                                                    groupCells = groupCells.toMutableList().also { it[cellIdx] = newTxt }
+                                                                }
+                                                            },
+                                                            singleLine = true,
+                                                            textStyle = TextStyle(
+                                                                fontSize = 15.sp,
+                                                                fontWeight = FontWeight.Black,
+                                                                fontFamily = IRANSansX,
+                                                                color = sk.primary,
+                                                                textAlign = TextAlign.Center
+                                                            ),
+                                                            cursorBrush = SolidColor(sk.primary),
+                                                            modifier = Modifier.fillMaxWidth()
+                                                        )
+                                                    }
+                                                } else {
+                                                    Column(
+                                                        Modifier
+                                                            .weight(1f)
+                                                            .height(66.dp)
+                                                            .clip(RoundedCornerShape(13.dp))
+                                                            .background(sk.primarySoft)
+                                                            .border(1.2.dp, sk.primary, RoundedCornerShape(13.dp))
+                                                            .clickableNoRipple {
+                                                                haptic.tick()
+                                                                val candidatePool = listOf("A", "B", "C", "D", "E", "F", "G", "H")
+                                                                val nextLetter = candidatePool.firstOrNull { it !in groupCells }
+                                                                    ?: "${groupCells.size + 1}"
+                                                                if (groupCells.size < 8) {
+                                                                    groupCells = groupCells + nextLetter
+                                                                }
+                                                            },
+                                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                                        verticalArrangement = Arrangement.Center
+                                                    ) {
+                                                        Text(
+                                                            "+",
+                                                            fontSize = 18.sp,
+                                                            fontWeight = FontWeight.Black,
+                                                            fontFamily = IRANSansX,
+                                                            color = sk.primary
+                                                        )
+                                                        Text(
+                                                            "افزودن گروه",
+                                                            fontSize = 10.sp,
+                                                            fontWeight = FontWeight.ExtraBold,
+                                                            fontFamily = IRANSansX,
+                                                            color = sk.primary
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                            repeat(4 - rowIndices.size) {
+                                                Spacer(Modifier.weight(1f))
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        val countsAndCycleContent: @Composable ColumnScope.() -> Unit = {
+                            Text(
+                                "تعداد روزهای هر نوبت در چرخه:",
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontFamily = IRANSansX,
+                                color = sk.textMuted
+                            )
+                            CycleCountRow(
+                                icon = SkIcons.Sun,
+                                label = "تعداد روز صبح‌کار",
+                                count = dayCount,
+                                minVal = 0,
+                                maxVal = 24,
+                                tintBg = sk.daySoft,
+                                tintInk = sk.dayInk,
+                                onChange = { haptic.tick(); dayCount = it }
+                            )
+                            CycleCountRow(
+                                icon = SkIcons.Sunset,
+                                label = "تعداد روز عصرکار",
+                                count = eveningCount,
+                                minVal = 0,
+                                maxVal = 24,
+                                tintBg = sk.eveningSoft,
+                                tintInk = sk.eveningInk,
+                                onChange = { haptic.tick(); eveningCount = it }
+                            )
+                            CycleCountRow(
+                                icon = SkIcons.Moon,
+                                label = "تعداد روز شب‌کار",
+                                count = nightCount,
+                                minVal = 0,
+                                maxVal = 24,
+                                tintBg = sk.nightSoft,
+                                tintInk = sk.nightInk,
+                                onChange = { haptic.tick(); nightCount = it }
+                            )
+                            CycleCountRow(
+                                icon = SkIcons.Rest,
+                                label = "تعداد روز استراحت",
+                                count = restCount,
+                                minVal = 1,
+                                maxVal = 24,
+                                tintBg = sk.restSoft,
+                                tintInk = sk.restInk,
+                                onChange = { haptic.tick(); restCount = it }
+                            )
+
+                            Spacer(Modifier.height(2.dp))
+
+                            Text(
+                                "پیش‌نمایش چرخه (${toPersianDigits(previewCycle.size)} روزه — برای انتخاب روزِ امروز کلیک کنید):",
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = IRANSansX,
+                                color = sk.textMuted
+                            )
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                previewCycle.forEachIndexed { idx, c ->
+                                    val k = codeToKind(c)
+                                    val (bg, ink) = when (k) {
+                                        ShiftKind.DAY -> sk.daySoft to sk.dayInk
+                                        ShiftKind.EVENING -> sk.eveningSoft to sk.eveningInk
+                                        ShiftKind.NIGHT -> sk.nightSoft to sk.nightInk
+                                        ShiftKind.REST -> sk.restSoft to sk.restInk
+                                    }
+                                    val isPickedToday = idx == safeStep
+                                    Box(
+                                        Modifier
+                                            .height(34.dp)
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(bg)
+                                            .border(
+                                                width = if (isPickedToday) 2.dp else 1.dp,
+                                                color = if (isPickedToday) sk.primary else ink.copy(alpha = 0.4f),
+                                                shape = RoundedCornerShape(10.dp)
+                                            )
+                                            .clickableNoRipple {
+                                                haptic.tick()
+                                                todayCycleStep = idx
+                                            }
+                                            .padding(horizontal = 10.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            CODE_NUM_FA.getValue(c),
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Black,
+                                            fontFamily = IRANSansX,
+                                            color = ink
+                                        )
+                                    }
+                                }
+                            }
+
+                            val stepCode = previewCycle[safeStep]
+                            Column(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(sk.surface)
+                                    .border(1.dp, sk.borderSoft, RoundedCornerShape(16.dp))
+                                    .padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    "تنظیم با تاریخ امروز (${formatJalali(today.jy, today.jm, today.jd)} — ${GROUP_FA.getValue(myGroup)}):",
+                                    fontSize = 11.5.sp,
                                     fontWeight = FontWeight.Bold,
                                     fontFamily = IRANSansX,
                                     color = sk.textMuted
                                 )
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Box(
+                                        Modifier
+                                            .size(36.dp)
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(sk.surfaceStrong)
+                                            .clickableNoRipple {
+                                                haptic.tick()
+                                                todayCycleStep = (safeStep - 1 + previewCycle.size) % previewCycle.size
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(SkIcons.ChevronRight, null, Modifier.size(16.dp), tint = sk.text)
+                                    }
+                                    Text(
+                                        "امروز: ${CODE_FA.getValue(stepCode)} (روز ${toPersianDigits(safeStep + 1)} از ${toPersianDigits(previewCycle.size)})",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Black,
+                                        fontFamily = IRANSansX,
+                                        color = sk.primary
+                                    )
+                                    Box(
+                                        Modifier
+                                            .size(36.dp)
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(sk.surfaceStrong)
+                                            .clickableNoRipple {
+                                                haptic.tick()
+                                                todayCycleStep = (safeStep + 1) % previewCycle.size
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(SkIcons.ChevronLeft, null, Modifier.size(16.dp), tint = sk.text)
+                                    }
+                                }
+                            }
+                        }
+
+                        if (isTwoCol) {
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .verticalScroll(rememberScrollState())
+                                    .padding(horizontal = 22.dp, vertical = 18.dp),
+                                horizontalArrangement = Arrangement.spacedBy(20.dp),
+                                verticalAlignment = Alignment.Top
+                            ) {
+                                Column(
+                                    Modifier.weight(1.05f),
+                                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                                    content = nameAndGroupsContent
+                                )
+                                Column(
+                                    Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                                    content = countsAndCycleContent
+                                )
+                            }
+                        } else {
+                            Column(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .verticalScroll(rememberScrollState())
+                                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                nameAndGroupsContent()
+                                Spacer(Modifier.height(6.dp))
+                                countsAndCycleContent()
                             }
                         }
                     }
-                }
 
-                Text(
-                    if (editingPatternId != null) "نام الگو:" else "نام الگوی سفارشی:",
-                    fontSize = 11.5.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = IRANSansX,
-                    color = sk.textMuted
-                )
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(sk.surfaceStrong)
-                        .border(1.dp, sk.borderSoft, RoundedCornerShape(14.dp))
-                        .padding(horizontal = 12.dp, vertical = 10.dp)
-                ) {
-                    BasicTextField(
-                        value = customName,
-                        onValueChange = { if (it.length <= 40) customName = it },
-                        singleLine = true,
-                        textStyle = TextStyle(
-                            fontSize = 13.5.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = IRANSansX,
-                            color = sk.text
-                        ),
-                        cursorBrush = SolidColor(sk.primary),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
+                    Box(Modifier.fillMaxWidth().height(1.dp).background(sk.borderSoft))
 
-                /* مدیریت پویا و تعاملی سلول‌های گروه شیفت (افزودن E/F/G یا حذف C/D یا فردی) */
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        "گروه‌های شیفت (حذف، ویرایش یا افزودن):",
-                        fontSize = 11.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = IRANSansX,
-                        color = sk.textMuted
-                    )
-                    Text(
-                        if (noGroupMode) "شیفت فردی (بدون گروه)" else "${toPersianDigits(groupCells.size)} گروه فعال",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Black,
-                        fontFamily = IRANSansX,
-                        color = sk.primary
-                    )
-                }
-
-                /* ردیف پیش‌فرض‌های سریع */
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    val quickPresets: List<Triple<String, Boolean, List<String>>> = listOf(
-                        Triple("چهار گروه (A..D)", false, listOf("A", "B", "C", "D")),
-                        Triple("سه گروه (A..C)", false, listOf("A", "B", "C")),
-                        Triple("دو گروه (A, B)", false, listOf("A", "B")),
-                        Triple("گروه‌های E..H", false, listOf("E", "F", "G", "H")),
-                        Triple("الف تا د", false, listOf("الف", "ب", "ج", "د")),
-                        Triple("بدون گروه (فردی)", true, emptyList())
-                    )
-                    quickPresets.forEach { (lbl, isNoGrp, presetList) ->
-                        val active = (noGroupMode && isNoGrp) || (!noGroupMode && !isNoGrp && groupCells == presetList)
-                        Box(
-                            Modifier
-                                .height(32.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(if (active) sk.primarySoft else sk.surface)
-                                .border(
-                                    width = if (active) 1.4.dp else 1.dp,
-                                    color = if (active) sk.primary else sk.borderSoft,
-                                    shape = RoundedCornerShape(10.dp)
-                                )
-                                .clickableNoRipple {
-                                    haptic.tick()
-                                    if (isNoGrp) {
-                                        noGroupMode = true
-                                    } else {
-                                        noGroupMode = false
-                                        groupCells = presetList
-                                    }
-                                }
-                                .padding(horizontal = 10.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                lbl,
-                                fontSize = 10.5.sp,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = IRANSansX,
-                                color = if (active) sk.primary else sk.textMuted
-                            )
-                        }
-                    }
-                }
-
-                /* سلول‌های گروه با قابلیت حذف هر سلول (×) و افزودن گروه جدید (+) */
-                AnimatedVisibility(visible = !noGroupMode) {
-                    Column(
+                    /* ---- 3. Pinned Bottom Save Bar (Always Visible!) ---- */
+                    Row(
                         Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(sk.surface)
-                            .border(1.dp, sk.borderSoft, RoundedCornerShape(14.dp))
-                            .padding(10.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                            .background(sk.surfaceStrong)
+                            .padding(horizontal = 22.dp, vertical = 14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        val allItemsCount = groupCells.size + (if (groupCells.size < 8) 1 else 0)
-                        val rows = (0 until allItemsCount).chunked(4)
-                        rows.forEach { rowIndices ->
-                            Row(
-                                Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                rowIndices.forEach { cellIdx ->
-                                    if (cellIdx < groupCells.size) {
-                                        val curVal = groupCells[cellIdx]
-                                        Column(
-                                            Modifier
-                                                .weight(1f)
-                                                .clip(RoundedCornerShape(12.dp))
-                                                .background(sk.surfaceStrong)
-                                                .border(1.dp, sk.primary.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
-                                                .padding(6.dp),
-                                            horizontalAlignment = Alignment.CenterHorizontally
-                                        ) {
-                                            Row(
-                                                Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Text(
-                                                    "گروه ${toPersianDigits(cellIdx + 1)}",
-                                                    fontSize = 9.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    fontFamily = IRANSansX,
-                                                    color = sk.textMuted
-                                                )
-                                                Box(
-                                                    Modifier
-                                                        .size(18.dp)
-                                                        .clip(CircleShape)
-                                                        .background(sk.holidaySoft)
-                                                        .clickableNoRipple {
-                                                            haptic.tick()
-                                                            if (groupCells.size <= 1) {
-                                                                noGroupMode = true
-                                                            } else {
-                                                                groupCells = groupCells.toMutableList().also { it.removeAt(cellIdx) }
-                                                            }
-                                                        },
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    Icon(SkIcons.Close, "حذف گروه", Modifier.size(10.dp), tint = sk.holiday)
-                                                }
-                                            }
-                                            Spacer(Modifier.height(4.dp))
-                                            BasicTextField(
-                                                value = curVal,
-                                                onValueChange = { newTxt ->
-                                                    if (newTxt.length <= 6) {
-                                                        groupCells = groupCells.toMutableList().also { it[cellIdx] = newTxt }
-                                                    }
-                                                },
-                                                singleLine = true,
-                                                textStyle = TextStyle(
-                                                    fontSize = 13.sp,
-                                                    fontWeight = FontWeight.Black,
-                                                    fontFamily = IRANSansX,
-                                                    color = sk.primary,
-                                                    textAlign = TextAlign.Center
-                                                ),
-                                                cursorBrush = SolidColor(sk.primary),
-                                                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
-                                            )
-                                        }
-                                    } else {
-                                        /* دکمهٔ + افزودن گروه جدید (مثلاً E، F، G، H) */
-                                        Column(
-                                            Modifier
-                                                .weight(1f)
-                                                .height(56.dp)
-                                                .clip(RoundedCornerShape(12.dp))
-                                                .background(sk.primarySoft)
-                                                .border(1.2.dp, sk.primary, RoundedCornerShape(12.dp))
-                                                .clickableNoRipple {
-                                                    haptic.tick()
-                                                    val candidatePool = listOf("A", "B", "C", "D", "E", "F", "G", "H")
-                                                    val nextLetter = candidatePool.firstOrNull { it !in groupCells }
-                                                        ?: "${groupCells.size + 1}"
-                                                    if (groupCells.size < 8) {
-                                                        groupCells = groupCells + nextLetter
-                                                    }
-                                                },
-                                            horizontalAlignment = Alignment.CenterHorizontally,
-                                            verticalArrangement = Arrangement.Center
-                                        ) {
-                                            Text(
-                                                "+",
-                                                fontSize = 16.sp,
-                                                fontWeight = FontWeight.Black,
-                                                fontFamily = IRANSansX,
-                                                color = sk.primary
-                                            )
-                                            Text(
-                                                "افزودن گروه",
-                                                fontSize = 9.sp,
-                                                fontWeight = FontWeight.ExtraBold,
-                                                fontFamily = IRANSansX,
-                                                color = sk.primary
-                                            )
-                                        }
-                                    }
-                                }
-                                repeat(4 - rowIndices.size) {
-                                    Spacer(Modifier.weight(1f))
-                                }
-                            }
-                        }
-                    }
-                }
-
-                /* Day / Evening / Night / Rest count steppers */
-                CycleCountRow(
-                    icon = SkIcons.Sun,
-                    label = "تعداد روز صبح‌کار",
-                    count = dayCount,
-                    minVal = 0,
-                    maxVal = 24,
-                    tintBg = sk.daySoft,
-                    tintInk = sk.dayInk,
-                    onChange = { haptic.tick(); dayCount = it }
-                )
-                CycleCountRow(
-                    icon = SkIcons.Sunset,
-                    label = "تعداد روز عصرکار",
-                    count = eveningCount,
-                    minVal = 0,
-                    maxVal = 24,
-                    tintBg = sk.eveningSoft,
-                    tintInk = sk.eveningInk,
-                    onChange = { haptic.tick(); eveningCount = it }
-                )
-                CycleCountRow(
-                    icon = SkIcons.Moon,
-                    label = "تعداد روز شب‌کار",
-                    count = nightCount,
-                    minVal = 0,
-                    maxVal = 24,
-                    tintBg = sk.nightSoft,
-                    tintInk = sk.nightInk,
-                    onChange = { haptic.tick(); nightCount = it }
-                )
-                CycleCountRow(
-                    icon = SkIcons.Rest,
-                    label = "تعداد روز استراحت",
-                    count = restCount,
-                    minVal = 1,
-                    maxVal = 24,
-                    tintBg = sk.restSoft,
-                    tintInk = sk.restInk,
-                    onChange = { haptic.tick(); restCount = it }
-                )
-
-                Text(
-                    "پیش‌نمایش چرخه (${toPersianDigits(previewCycle.size)} روزه — برای انتخاب روزِ امروز لمس کنید):",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = IRANSansX,
-                    color = sk.textMuted
-                )
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    previewCycle.forEachIndexed { idx, c ->
-                        val k = codeToKind(c)
-                        val (bg, ink) = when (k) {
-                            ShiftKind.DAY -> sk.daySoft to sk.dayInk
-                            ShiftKind.EVENING -> sk.eveningSoft to sk.eveningInk
-                            ShiftKind.NIGHT -> sk.nightSoft to sk.nightInk
-                            ShiftKind.REST -> sk.restSoft to sk.restInk
-                        }
-                        val isPickedToday = idx == safeStep
                         Box(
                             Modifier
-                                .height(30.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(bg)
-                                .border(
-                                    width = if (isPickedToday) 1.8.dp else 1.dp,
-                                    color = if (isPickedToday) sk.primary else ink.copy(alpha = 0.4f),
-                                    shape = RoundedCornerShape(8.dp)
-                                )
-                                .clickableNoRipple {
-                                    haptic.tick()
-                                    todayCycleStep = idx
-                                }
-                                .padding(horizontal = 8.dp),
+                                .height(46.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(sk.surface)
+                                .border(1.dp, sk.borderSoft, RoundedCornerShape(14.dp))
+                                .clickableNoRipple { builderOpen = false }
+                                .padding(horizontal = 22.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                CODE_NUM_FA.getValue(c),
-                                fontSize = 10.sp,
+                                "انصراف",
+                                fontSize = 13.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = IRANSansX,
+                                color = sk.textMuted
+                            )
+                        }
+
+                        Row(
+                            Modifier
+                                .weight(1f)
+                                .height(46.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(sk.primary)
+                                .clickableNoRipple {
+                                    haptic.tick(18)
+                                    val total = previewCycle.size.coerceAtLeast(1)
+                                    val cleanedCells = groupCells.map { it.trim() }.filter { it.isNotEmpty() }
+                                    val hasGroupsFlag = !noGroupMode && cleanedCells.isNotEmpty()
+                                    val grpCount = if (!hasGroupsFlag) 1 else cleanedCells.size.coerceIn(1, ALL_SHIFT_GROUPS.size)
+                                    val stepGap = (total / grpCount).coerceAtLeast(1)
+                                    val offsets = ALL_SHIFT_GROUPS.mapIndexed { idx, g ->
+                                        g to (if (!hasGroupsFlag) 0 else (stepGap * idx) % total)
+                                    }.toMap()
+                                    val resolvedLabels = ALL_SHIFT_GROUPS.mapIndexed { idx, g ->
+                                        g to (cleanedCells.getOrNull(idx) ?: g.name)
+                                    }.toMap()
+                                    val myOff = offsets[myGroup] ?: 0
+                                    val todayJdn = jalaliToJdn(today.jy, today.jm, today.jd)
+                                    val anchorJdn = todayJdn + myOff - safeStep
+                                    val wasEditing = editingPatternId != null
+                                    val id = editingPatternId ?: "custom_${System.currentTimeMillis()}"
+                                    val title = customName.trim().ifEmpty { "شیفت سفارشی" }
+                                    val activeNames = cleanedCells.take(grpCount).joinToString("/")
+                                    val sub = buildString {
+                                        if (dayCount > 0) append("${toPersianDigits(dayCount)} روز صبح‌کار · ")
+                                        if (eveningCount > 0) append("${toPersianDigits(eveningCount)} روز عصرکار · ")
+                                        if (nightCount > 0) append("${toPersianDigits(nightCount)} روز شب‌کار · ")
+                                        append("${toPersianDigits(restCount)} روز استراحت")
+                                        if (!hasGroupsFlag) {
+                                            append(" (بدون گروه / فردی)")
+                                        } else {
+                                            append(" (${toPersianDigits(grpCount)} گروه: $activeNames)")
+                                        }
+                                    }
+                                    val spec = ShiftPatternSpec(
+                                        id = id,
+                                        name = title,
+                                        subtitle = sub,
+                                        dayCount = dayCount,
+                                        eveningCount = eveningCount,
+                                        nightCount = nightCount,
+                                        restCount = restCount,
+                                        anchorJdn = anchorJdn,
+                                        groupOffsets = offsets,
+                                        isWeeklyAdmin = false,
+                                        isCustom = true,
+                                        hasGroups = hasGroupsFlag,
+                                        groupCount = grpCount,
+                                        groupLabels = resolvedLabels
+                                    )
+                                    vm.saveCustomPattern(spec, activateImmediately = true)
+                                    editingPatternId = null
+                                    builderOpen = false
+                                    ToastCenter.show(
+                                        if (wasEditing) "تغییرات الگوی «$title» ذخیره و در برنامه اعمال شد"
+                                        else "الگوی «$title» ساخته و در کل برنامه فعال شد"
+                                    )
+                                },
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(SkIcons.Check, null, Modifier.size(17.dp), tint = sk.sheetSolid)
+                            Text(
+                                if (editingPatternId != null) "ذخیرهٔ تغییرات الگو و اعمال در برنامه" else "ذخیره و اعمال در کل برنامه",
+                                Modifier.padding(start = 8.dp),
+                                fontSize = 14.sp,
                                 fontWeight = FontWeight.Black,
                                 fontFamily = IRANSansX,
-                                color = ink
+                                color = sk.sheetSolid
                             )
                         }
                     }
                 }
-
-                val stepCode = previewCycle[safeStep]
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(sk.surface)
-                        .border(1.dp, sk.borderSoft, RoundedCornerShape(14.dp))
-                        .padding(10.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Text(
-                        "تنظیم با تاریخ امروز (${formatJalali(today.jy, today.jm, today.jd)} — ${GROUP_FA.getValue(myGroup)}):",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = IRANSansX,
-                        color = sk.textMuted
-                    )
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Box(
-                            Modifier
-                                .size(32.dp)
-                                .clip(RoundedCornerShape(9.dp))
-                                .background(sk.surfaceStrong)
-                                .clickableNoRipple {
-                                    haptic.tick()
-                                    todayCycleStep = (safeStep - 1 + previewCycle.size) % previewCycle.size
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(SkIcons.ChevronRight, null, Modifier.size(15.dp), tint = sk.text)
-                        }
-                        Text(
-                            "امروز: ${CODE_FA.getValue(stepCode)} (روز ${toPersianDigits(safeStep + 1)} از ${toPersianDigits(previewCycle.size)})",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Black,
-                            fontFamily = IRANSansX,
-                            color = sk.primary
-                        )
-                        Box(
-                            Modifier
-                                .size(32.dp)
-                                .clip(RoundedCornerShape(9.dp))
-                                .background(sk.surfaceStrong)
-                                .clickableNoRipple {
-                                    haptic.tick()
-                                    todayCycleStep = (safeStep + 1) % previewCycle.size
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(SkIcons.ChevronLeft, null, Modifier.size(15.dp), tint = sk.text)
-                        }
-                    }
-                }
-
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(sk.primary)
-                        .clickableNoRipple {
-                            haptic.tick(18)
-                            val total = previewCycle.size.coerceAtLeast(1)
-                            val cleanedCells = groupCells.map { it.trim() }.filter { it.isNotEmpty() }
-                            val hasGroupsFlag = !noGroupMode && cleanedCells.isNotEmpty()
-                            val grpCount = if (!hasGroupsFlag) 1 else cleanedCells.size.coerceIn(1, ALL_SHIFT_GROUPS.size)
-                            val stepGap = (total / grpCount).coerceAtLeast(1)
-                            val offsets = ALL_SHIFT_GROUPS.mapIndexed { idx, g ->
-                                g to (if (!hasGroupsFlag) 0 else (stepGap * idx) % total)
-                            }.toMap()
-                            val resolvedLabels = ALL_SHIFT_GROUPS.mapIndexed { idx, g ->
-                                g to (cleanedCells.getOrNull(idx) ?: g.name)
-                            }.toMap()
-                            val myOff = offsets[myGroup] ?: 0
-                            val todayJdn = jalaliToJdn(today.jy, today.jm, today.jd)
-                            val anchorJdn = todayJdn + myOff - safeStep
-                            val wasEditing = editingPatternId != null
-                            val id = editingPatternId ?: "custom_${System.currentTimeMillis()}"
-                            val title = customName.trim().ifEmpty { "شیفت سفارشی" }
-                            val activeNames = cleanedCells.take(grpCount).joinToString("/")
-                            val sub = buildString {
-                                if (dayCount > 0) append("${toPersianDigits(dayCount)} روز صبح‌کار · ")
-                                if (eveningCount > 0) append("${toPersianDigits(eveningCount)} روز عصرکار · ")
-                                if (nightCount > 0) append("${toPersianDigits(nightCount)} روز شب‌کار · ")
-                                append("${toPersianDigits(restCount)} روز استراحت")
-                                if (!hasGroupsFlag) {
-                                    append(" (بدون گروه / فردی)")
-                                } else {
-                                    append(" (${toPersianDigits(grpCount)} گروه: $activeNames)")
-                                }
-                            }
-                            val spec = ShiftPatternSpec(
-                                id = id,
-                                name = title,
-                                subtitle = sub,
-                                dayCount = dayCount,
-                                eveningCount = eveningCount,
-                                nightCount = nightCount,
-                                restCount = restCount,
-                                anchorJdn = anchorJdn,
-                                groupOffsets = offsets,
-                                isWeeklyAdmin = false,
-                                isCustom = true,
-                                hasGroups = hasGroupsFlag,
-                                groupCount = grpCount,
-                                groupLabels = resolvedLabels
-                            )
-                            vm.saveCustomPattern(spec, activateImmediately = true)
-                            editingPatternId = null
-                            builderOpen = false
-                            ToastCenter.show(
-                                if (wasEditing) "تغییرات الگوی «$title» ذخیره و در برنامه اعمال شد"
-                                else "الگوی «$title» ساخته و در کل برنامه فعال شد"
-                            )
-                        }
-                        .padding(vertical = 12.dp),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(SkIcons.Check, null, Modifier.size(16.dp), tint = sk.sheetSolid)
-                    Text(
-                        if (editingPatternId != null) "ذخیرهٔ تغییرات الگو و اعمال در برنامه" else "ذخیره و اعمال در کل برنامه",
-                        Modifier.padding(start = 8.dp),
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Black,
-                        fontFamily = IRANSansX,
-                        color = sk.sheetSolid
-                    )
-                }
+            }
         }
     }
 

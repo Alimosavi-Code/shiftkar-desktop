@@ -6,7 +6,7 @@ import com.seyedhosseinmousavisaeedi.shiftkar.engine.ThemeId
 import com.seyedhosseinmousavisaeedi.shiftkar.platform.getSystemAccentColorRgb
 
 /**
- * ShiftKar Neo — "Frost" design system tokens (v6.7.3 Desktop & Multiplatform):
+ * ShiftKar — "Frost" design system tokens (v6.7.3 Desktop & Multiplatform):
  *  - Clearly differentiated Morning («صبح‌کار» — bright Canary/Solar Gold) vs
  *    Evening («عصرکار» — Sunset Coral-Crimson -> Twilight Magenta gradient)
  *  - 2-stop gradient tokens for each shift kind (`daySoft..daySoftEnd`, `eveningSoft..eveningSoftEnd`, etc.)

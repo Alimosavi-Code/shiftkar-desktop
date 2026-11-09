@@ -224,7 +224,7 @@ actual fun getSystemAccentColorRgb(): Long? {
 
 private fun desktopStorageDir(): File {
     val home = System.getProperty("user.home") ?: "."
-    val legacyDir = File(home, ".shiftkar-neo")
+    val legacyDir = File(home, ".shiftkar")
     if (legacyDir.exists()) return legacyDir
     val os = System.getProperty("os.name")?.lowercase().orEmpty()
     val base = when {

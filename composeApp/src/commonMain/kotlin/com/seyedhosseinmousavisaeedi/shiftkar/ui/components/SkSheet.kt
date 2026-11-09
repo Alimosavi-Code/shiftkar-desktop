@@ -1,13 +1,22 @@
 package com.seyedhosseinmousavisaeedi.shiftkar.ui.components
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -28,24 +37,18 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.theme.IRANSansX
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.theme.LocalSk
+import kotlinx.coroutines.launch
 
 private val SheetEnterEase = CubicBezierEasing(0.22f, 0.8f, 0.36f, 1f)
 
-/**
- * Desktop-optimized Popup Sheet / Modal Dialog:
- * Opens as a centered glass popup (`Dialog`) on top of the current screen so that
- * Pattern Editing (`ShiftManagerScreen`), Day Details (`DaySheet`), Month Picker (`MonthPickerSheet`),
- * and Notes (`NotesSheet`) always float as a clean popup modal with a close button (`✕`)
- * and backdrop click-to-dismiss instead of expanding inline inside the page.
- */
 @Composable
 fun SkSheet(
     visible: Boolean,
@@ -56,126 +59,211 @@ fun SkSheet(
     bodyScroll: ScrollState = rememberScrollState(),
     content: @Composable ColumnScope.() -> Unit
 ) {
-    if (!visible) return
+    var alive by remember { mutableStateOf(visible) }
+    if (visible && !alive) alive = true
 
-    val sk = LocalSk.current
-    val dark = sk.sheetSolid.luminance() < 0.5f
-    var sheetBounds by remember { mutableStateOf(Rect.Zero) }
+    var fullscreen by remember { mutableStateOf(false) }
 
-    val intro = remember { Animatable(0f) }
-    LaunchedEffect(Unit) {
-        intro.animateTo(1f, tween(220, easing = SheetEnterEase))
+    LaunchedEffect(visible) {
+        if (visible) {
+            fullscreen = false
+        } else {
+            kotlinx.coroutines.delay(270)
+            alive = false
+        }
     }
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
-    ) {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(Color(0xA6070E20))
-                .pointerInput(Unit) {
-                    detectTapGestures { pos ->
-                        if (sheetBounds != Rect.Zero && !sheetBounds.contains(pos)) {
-                            onDismiss()
+    if (!alive) return
+
+    val sk = LocalSk.current
+    val density = LocalDensity.current
+    val screenH = 820
+    val collapsedH = (screenH * 0.86f).dp
+    val dark = sk.sheetSolid.luminance() < 0.5f
+
+    val fsP by animateFloatAsState(
+        targetValue = if (fullscreen) 1f else 0f,
+        animationSpec = tween(260, easing = SheetEnterEase),
+        label = "sheetFs"
+    )
+    val maxH = collapsedH + ((screenH.dp - collapsedH) * fsP)
+    val radiusDp = 26f * (1f - fsP)
+
+    val imeBottomPx = WindowInsets.ime.getBottom(density)
+    LaunchedEffect(imeBottomPx) {
+        if (imeBottomPx > 0 && expandable && !fullscreen) fullscreen = true
+    }
+
+    val scope = rememberCoroutineScope()
+    val drag = remember { Animatable(0f) }
+
+    LaunchedEffect(expandable) {
+        snapshotFlow { bodyScroll.value to bodyScroll.maxValue }
+            .collect { (v, max) ->
+                if (!fullscreen && expandable && max > 0 && v >= max - 6) {
+                    fullscreen = true
+                }
+            }
+    }
+
+    var sheetBounds by remember { mutableStateOf(Rect.Zero) }
+
+    Box(Modifier.fillMaxSize()) {
+        AnimatedVisibility(
+            visible = visible,
+            enter = fadeIn(animationSpec = tween(220)),
+            exit = fadeOut(animationSpec = tween(220))
+        ) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(Color(0x9E081024))
+                    .pointerInput(Unit) {
+                        detectTapGestures { pos ->
+                            if (sheetBounds != Rect.Zero && !sheetBounds.contains(pos)) onDismiss()
                         }
                     }
-                },
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                modifier
-                    .padding(horizontal = 24.dp, vertical = 24.dp)
-                    .widthIn(max = 600.dp)
-                    .fillMaxWidth()
-                    .heightIn(max = 690.dp)
-                    .onGloballyPositioned { sheetBounds = it.boundsInRoot() }
-                    .graphicsLayer {
-                        alpha = intro.value
-                        val sc = 0.94f + 0.06f * intro.value
-                        scaleX = sc
-                        scaleY = sc
-                    }
-                    .clip(RoundedCornerShape(26.dp))
-                    .background(sk.sheetSolid)
-                    .drawBehind {
-                        drawRect(
-                            Brush.verticalGradient(
-                                listOf(
-                                    sk.primary.copy(alpha = if (dark) 0.20f else 0.12f),
-                                    Color.Transparent
-                                ),
-                                startY = 0f,
-                                endY = size.height * 0.38f
-                            )
-                        )
-                    }
-                    .drawBehind {
-                        drawRect(
-                            Brush.verticalGradient(
-                                listOf(sk.specular.copy(alpha = 0.12f), Color.Transparent),
-                                startY = 0f,
-                                endY = size.height * 0.22f
-                            )
-                        )
-                    }
-                    .clickable(
-                        indication = null,
-                        interactionSource = remember { MutableInteractionSource() }
-                    ) { /* swallow taps inside modal */ }
-                    .border(
-                        width = 1.2.dp,
-                        color = sk.border,
-                        shape = RoundedCornerShape(26.dp)
-                    )
+            )
+        }
+
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+            AnimatedVisibility(
+                visible = visible,
+                enter = slideInVertically(
+                    animationSpec = tween(260, easing = SheetEnterEase)
+                ) { it },
+                exit = slideOutVertically(
+                    animationSpec = tween(240, easing = CubicBezierEasing(0.4f, 0f, 0.8f, 0.4f))
+                ) { it }
             ) {
-                Spacer(Modifier.height(10.dp))
-
-                // Top decorative handle pill
-                Box(
-                    Modifier
-                        .align(Alignment.CenterHorizontally)
-                        .width(42.dp)
-                        .height(4.5.dp)
-                        .clip(RoundedCornerShape(100))
-                        .background(sk.textFaint.copy(alpha = 0.45f))
-                )
-
-                // Modal header with Title + always-visible Close button (✕)
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(start = 18.dp, end = 18.dp, top = 8.dp, bottom = 10.dp)
-                        .heightIn(min = 38.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        title,
-                        Modifier.weight(1f),
-                        fontSize = 16.5.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontFamily = IRANSansX,
-                        color = sk.text,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    SheetButton(icon = SkIcons.Close, desc = "بستن") { onDismiss() }
-                }
-
-                Box(Modifier.fillMaxWidth().height(1.dp).background(sk.borderSoft))
-                Spacer(Modifier.height(8.dp))
-
-                // Scrollable modal body
                 Column(
-                    Modifier
+                    modifier
                         .fillMaxWidth()
-                        .weight(1f, fill = false)
-                        .verticalScroll(bodyScroll)
-                        .padding(bottom = 12.dp),
-                    content = content
-                )
+                        .onGloballyPositioned { sheetBounds = it.boundsInRoot() }
+                        .heightIn(min = maxH * fsP, max = maxH)
+                        .graphicsLayer { translationY = drag.value }
+                        .clip(RoundedCornerShape(topStart = radiusDp.dp, topEnd = radiusDp.dp))
+                        .background(sk.sheetSolid)
+                        .drawBehind {
+                            drawRect(
+                                Brush.verticalGradient(
+                                    listOf(
+                                        sk.primary.copy(alpha = if (dark) 0.20f else 0.12f),
+                                        Color.Transparent
+                                    ),
+                                    startY = 0f,
+                                    endY = size.height * 0.38f
+                                )
+                            )
+                        }
+                        .drawBehind {
+                            drawRect(
+                                Brush.verticalGradient(
+                                    listOf(sk.specular.copy(alpha = 0.12f), Color.Transparent),
+                                    startY = 0f,
+                                    endY = size.height * 0.22f
+                                )
+                            )
+                        }
+                        .clickable(
+                            indication = null,
+                            interactionSource = remember { MutableInteractionSource() }
+                        ) { }
+                        .border(
+                            width = 1.dp,
+                            color = sk.border,
+                            shape = RoundedCornerShape(topStart = radiusDp.dp, topEnd = radiusDp.dp)
+                        )
+                        .pointerInput(fullscreen, expandable) {
+                            detectVerticalDragGestures(
+                                onVerticalDrag = { change, amount ->
+                                    change.consume()
+                                    val min = if (fullscreen) 0f else -60f
+                                    val max = if (fullscreen) 400f else 170f
+                                    val next = (drag.value + amount).coerceIn(min, max)
+                                    scope.launch { drag.snapTo(next) }
+                                },
+                                onDragEnd = {
+                                    val v = drag.value
+                                    when {
+                                        v > 90 -> if (fullscreen) fullscreen = false else onDismiss()
+                                        v < -24 && expandable && !fullscreen -> fullscreen = true
+                                    }
+                                    scope.launch {
+                                        drag.animateTo(
+                                            0f,
+                                            spring(stiffness = Spring.StiffnessMediumLow)
+                                        )
+                                    }
+                                },
+                                onDragCancel = {
+                                    scope.launch {
+                                        drag.animateTo(
+                                            0f,
+                                            spring(stiffness = Spring.StiffnessMediumLow)
+                                        )
+                                    }
+                                }
+                            )
+                        }
+                ) {
+                    val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+                    Spacer(Modifier.height(lerp(8.dp, statusTop, fsP)))
+
+                    Box(
+                        Modifier
+                            .align(Alignment.CenterHorizontally)
+                            .width(42.dp)
+                            .height(5.dp)
+                            .clip(RoundedCornerShape(100))
+                            .background(sk.textFaint.copy(alpha = 0.45f))
+                            .clickable(
+                                indication = null,
+                                interactionSource = remember { MutableInteractionSource() }
+                            ) {
+                                if (expandable) fullscreen = !fullscreen
+                            }
+                    )
+
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(start = 14.dp, end = 14.dp, bottom = 8.dp)
+                            .heightIn(min = 36.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            title,
+                            Modifier.weight(1f),
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontFamily = IRANSansX,
+                            color = sk.text,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        SheetButton(icon = SkIcons.Close, desc = "بستن") { onDismiss() }
+                    }
+
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .weight(1f, fill = false)
+                            .verticalScroll(bodyScroll)
+                            .padding(bottom = 8.dp),
+                        content = content
+                    )
+
+                    Spacer(
+                        Modifier.height(
+                            WindowInsets.navigationBars
+                                .union(WindowInsets.ime)
+                                .asPaddingValues()
+                                .calculateBottomPadding()
+                        )
+                    )
+                }
             }
         }
     }

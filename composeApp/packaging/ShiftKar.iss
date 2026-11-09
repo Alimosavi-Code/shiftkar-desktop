@@ -1,5 +1,5 @@
 ﻿; =========================================================================
-; ShiftKar Neo Desktop — Official Inno Setup 6 Installer Script
+; ShiftKar — Official Inno Setup 6 Installer Script
 ; Styled Modern Wizard + Full Windows Apps & Features Uninstaller + Start Menu
 ; =========================================================================
 
@@ -16,7 +16,7 @@
 #endif
 
 #define MyAppName "ShiftKar"
-#define MyAppDisplayName "ShiftKar Neo (شیفت‌کار نئو)"
+#define MyAppDisplayName "شیفت‌کار"
 #define MyAppPublisher "Seyed Hossein Mousavi Saeedi"
 #define MyAppURL "https://alimosavi-code.github.io"
 #define MyAppExeName "ShiftKar.exe"
@@ -25,7 +25,7 @@
 AppId={{8F9E4A32-6C15-4D88-9B12-7E5A3109C673}
 AppName={#MyAppDisplayName}
 AppVersion={#MyAppVersion}
-AppVerName={#MyAppDisplayName} v{#MyAppVersion} ({#MyArch})
+AppVerName={#MyAppDisplayName} {#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL=https://github.com/Alimosavi-Code/shiftkar-desktop
@@ -63,9 +63,9 @@ Source: "{#MySourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdir
 
 [Icons]
 ; Start Menu main application shortcut
-Name: "{group}\{#MyAppDisplayName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"; Comment: "تقویم هوشمند نوبت‌کاری شیفت‌کار نئو"
-; Start Menu dedicated Uninstaller shortcut (requested by user)
-Name: "{group}\Uninstall ShiftKar (حذف شیفت‌کار)"; Filename: "{uninstallexe}"; IconFilename: "{app}\{#MyAppExeName}"; Comment: "حذف کامل برنامه شیفت‌کار از ویندوز"
+Name: "{group}\{#MyAppDisplayName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"; Comment: "تقویم هوشمند نوبت‌کاری شیفت‌کار"
+; Start Menu dedicated Uninstaller shortcut
+Name: "{group}\حذف شیفت‌کار"; Filename: "{uninstallexe}"; IconFilename: "{app}\{#MyAppExeName}"; Comment: "حذف کامل برنامه شیفت‌کار از ویندوز"
 ; Optional Desktop shortcut
 Name: "{autodesktop}\{#MyAppDisplayName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 

@@ -11,7 +11,7 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 
 /**
- * ShiftKar Neo — unified icon set.
+ * ShiftKar — unified icon set.
  * VERBATIM port of the original ShiftKar / PWA `icons.tsx` PATH DATA
  * (stroke-based, 24px grid, strokeWidth 1.8, round caps/joins) so every
  * icon matches the source app exactly.

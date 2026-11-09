@@ -1,6 +1,6 @@
-# ShiftKar Neo — شیفت‌کار نئو (Desktop Edition v6.7.3) 🖥️
+# ShiftKar — شیفت‌کار (Desktop Edition v6.7.3) 🖥️
 
-نسخهٔ دسکتاپ **شیفت‌کار نئو (v6.7.3)** هماهنگ با نسخهٔ اندروید و وب، ساخته‌شده با **Kotlin + Compose Multiplatform for Desktop** برای:
+نسخهٔ دسکتاپ **شیفت‌کار (v6.7.3)** هماهنگ با نسخهٔ اندروید و وب، ساخته‌شده با **Kotlin + Compose Multiplatform for Desktop** برای:
 - 🐧 **Linux** (`.deb`, `.rpm`, `.AppImage`)
 - 🍎 **macOS** (`.dmg`)
 - 🪟 **Windows** (`.msi`, `.exe`)

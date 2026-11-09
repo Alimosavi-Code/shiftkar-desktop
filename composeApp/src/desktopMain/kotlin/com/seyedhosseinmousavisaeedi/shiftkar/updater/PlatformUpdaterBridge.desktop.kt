@@ -56,7 +56,7 @@ actual object PlatformUpdaterBridge {
 
     private fun updatesDir(): File {
         val home = System.getProperty("user.home") ?: "."
-        return File(home, ".shiftkar-neo/updates").apply { mkdirs() }
+        return File(home, ".shiftkar/updates").apply { mkdirs() }
     }
 
     private fun isArm64(): Boolean {
