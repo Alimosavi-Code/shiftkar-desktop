@@ -45,14 +45,14 @@ class EngineMultiplatformTest {
         // Verified against official Tehran University Institute of Geophysics Calendar 1405:
         // 1 Farvardin 1405 = 1 Shawwal 1447 AH (Eid al-Fitr)
         assertEquals(HijriDate(1447, 10, 1), toHijri(1405, 1, 1))
-        // 4 Tir 1405 = 9 Muharram 1448 AH (Tasua)
-        assertEquals(HijriDate(1448, 1, 9), toHijri(1405, 4, 4))
-        // 5 Tir 1405 = 10 Muharram 1448 AH (Ashura)
-        assertEquals(HijriDate(1448, 1, 10), toHijri(1405, 4, 5))
-        // 22 Bahman 1405 = 3 Ramadan 1448 AH
-        assertEquals(HijriDate(1448, 9, 3), toHijri(1405, 11, 22))
-        // 20 Esfand 1405 = 1 Shawwal 1448 AH (Eid al-Fitr)
-        assertEquals(HijriDate(1448, 10, 1), toHijri(1405, 12, 20))
+        // 3 Tir 1405 = 9 Muharram 1448 AH (Tasua)
+        assertEquals(HijriDate(1448, 1, 9), toHijri(1405, 4, 3))
+        // 4 Tir 1405 = 10 Muharram 1448 AH (Ashura)
+        assertEquals(HijriDate(1448, 1, 10), toHijri(1405, 4, 4))
+        // 22 Bahman 1405 = 4 Ramadan 1448 AH
+        assertEquals(HijriDate(1448, 9, 4), toHijri(1405, 11, 22))
+        // 19 Esfand 1405 = 1 Shawwal 1448 AH (Eid al-Fitr)
+        assertEquals(HijriDate(1448, 10, 1), toHijri(1405, 12, 19))
     }
 
     @Test
