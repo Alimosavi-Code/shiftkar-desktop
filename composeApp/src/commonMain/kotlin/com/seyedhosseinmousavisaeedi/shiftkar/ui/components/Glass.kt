@@ -18,10 +18,15 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.seyedhosseinmousavisaeedi.shiftkar.engine.JalaliDate
 import com.seyedhosseinmousavisaeedi.shiftkar.engine.ShiftCode
 import com.seyedhosseinmousavisaeedi.shiftkar.engine.ShiftGroup
 import com.seyedhosseinmousavisaeedi.shiftkar.engine.ShiftKind
@@ -29,34 +34,105 @@ import com.seyedhosseinmousavisaeedi.shiftkar.engine.codeToKind
 import com.seyedhosseinmousavisaeedi.shiftkar.engine.faLetter
 import com.seyedhosseinmousavisaeedi.shiftkar.engine.shiftCodeIndex
 import com.seyedhosseinmousavisaeedi.shiftkar.engine.toPersianDigits
+import com.seyedhosseinmousavisaeedi.shiftkar.engine.todayJalaali
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.theme.IRANSansX
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.theme.LocalSk
+import kotlinx.coroutines.delay
 
 /**
- * Shared Frost UI atoms (v6.5.3):
- *  - Added 2-stop gradient brushes on `KindColors` so Morning (`صبح‌کار`) and
- *    Evening (`عصرکار`) badges/cells have distinctly different gradients.
- *  - Added `ShiftDayOrdinalBadge` (elegant mini shift icon + shift day number `۱`, `۲`, etc.)
- *    for Calendar cells.
+ * Shared Frost UI atoms & primitives (v6.7.3 Desktop & Multiplatform):
+ *  - Glass surfaces (`glass`, `glassHero`, `glassStrong`, `cardSoft`, `skTile`, `skOutline`)
+ *  - Typography & controls (`GradientText`, `SkIconButton`, `GlassButton`, `SegmentedControl`, `SkSwitch`, `SectionTitle`)
+ *  - Shift badges (`CheckBadge`, `MiniBadge`, `GroupNumBadge`, `ShiftDayOrderBadge`, `kindColors`, `kindIcon`)
+ *  - Desktop hover & midnight auto-refresh (`clickableNoRipple`, `rememberLiveToday`)
  */
 
-fun Modifier.glass(shape: RoundedCornerShape = RoundedCornerShape(16.dp), tint: Color? = null): Modifier = composed {
+fun Modifier.glass(
+    shape: RoundedCornerShape = RoundedCornerShape(16.dp),
+    tint: Color? = null,
+    borderColor: Color? = null,
+    borderWidth: Dp = 1.dp
+): Modifier = composed {
     val sk = LocalSk.current
+    val fillBrush = remember(sk.glassHi, sk.glassLo) {
+        Brush.verticalGradient(listOf(sk.glassHi, sk.glassLo))
+    }
     this
         .clip(shape)
+        .background(fillBrush)
+        .let { m -> if (tint != null) m.background(tint) else m }
         .drawBehind {
-            drawRect(Brush.linearGradient(listOf(sk.glassHi, sk.glassLo), start = Offset.Zero, end = Offset(0.55f, 1f)))
-            tint?.let { drawRect(it) }
             drawLine(
                 color = sk.specular,
                 start = Offset(0f, 0.5f),
                 end = Offset(size.width, 0.5f),
-                strokeWidth = 1f
+                strokeWidth = 1.dp.toPx()
+            )
+        }
+        .border(borderWidth, borderColor ?: sk.border, shape)
+}
+
+fun Modifier.glassHero(
+    shape: RoundedCornerShape = RoundedCornerShape(22.dp),
+    tintBrush: Brush? = null
+): Modifier = composed {
+    val sk = LocalSk.current
+    val base = remember(sk.glassHi, sk.glassLo) {
+        Brush.linearGradient(
+            colors = listOf(sk.glassHi, sk.glassLo),
+            start = Offset.Zero,
+            end = Offset(900f, 900f)
+        )
+    }
+    this
+        .clip(shape)
+        .background(base)
+        .let { m -> if (tintBrush != null) m.background(tintBrush) else m }
+        .border(1.dp, sk.border, shape)
+        .drawBehind {
+            drawLine(
+                color = sk.specular,
+                start = Offset(0f, 0.5f),
+                end = Offset(size.width, 0.5f),
+                strokeWidth = 1.2.dp.toPx()
+            )
+            drawRect(
+                brush = Brush.verticalGradient(
+                    colors = listOf(sk.sheen, Color.Transparent),
+                    startY = 0f,
+                    endY = size.height * 0.46f
+                )
+            )
+        }
+}
+
+fun Modifier.glassStrong(
+    shape: RoundedCornerShape = RoundedCornerShape(22.dp)
+): Modifier = composed {
+    val sk = LocalSk.current
+    val fillBrush = remember(sk.glassHi, sk.glassLo) {
+        Brush.verticalGradient(
+            listOf(
+                sk.glassHi.copy(alpha = (sk.glassHi.alpha * 1.25f).coerceAtMost(0.95f)),
+                sk.glassLo.copy(alpha = (sk.glassLo.alpha * 1.35f).coerceAtMost(0.90f))
+            )
+        )
+    }
+    this
+        .clip(shape)
+        .background(fillBrush)
+        .drawBehind {
+            drawLine(
+                color = sk.specular,
+                start = Offset(0f, 0.5f),
+                end = Offset(size.width, 0.5f),
+                strokeWidth = 1.dp.toPx()
             )
         }
         .border(1.dp, sk.border, shape)
 }
 
+/** `.card-soft` — same fill without any blur layer (large scrolling surfaces). */
 fun Modifier.cardSoft(shape: RoundedCornerShape = RoundedCornerShape(16.dp)): Modifier = composed {
     val sk = LocalSk.current
     this
@@ -73,6 +149,7 @@ fun Modifier.cardSoft(shape: RoundedCornerShape = RoundedCornerShape(16.dp)): Mo
         }
 }
 
+/** `.sk-tile` — frosted day cell (radial sheen at top + glass fill). */
 fun Modifier.skTile(shape: RoundedCornerShape = RoundedCornerShape(12.dp)): Modifier = composed {
     val sk = LocalSk.current
     this
@@ -90,6 +167,7 @@ fun Modifier.skTile(shape: RoundedCornerShape = RoundedCornerShape(12.dp)): Modi
         .border(1.dp, sk.border, shape)
 }
 
+/** `.sk-outline` — settings signature 2px outlined option card. */
 fun Modifier.skOutline(active: Boolean, shape: RoundedCornerShape = RoundedCornerShape(16.dp)): Modifier = composed {
     val sk = LocalSk.current
     this
@@ -98,6 +176,7 @@ fun Modifier.skOutline(active: Boolean, shape: RoundedCornerShape = RoundedCorne
         .border(2.dp, if (active) sk.primary else sk.borderSoft, shape)
 }
 
+/** Text gradient — `.text-gradient` (primary → glowB 55% → glowA). */
 @Composable
 fun GradientText(
     text: String,
@@ -112,7 +191,7 @@ fun GradientText(
     Text(
         text,
         modifier,
-        style = androidx.compose.ui.text.TextStyle(
+        style = TextStyle(
             fontSize = fontSize.sp,
             fontWeight = fontWeight,
             fontFamily = IRANSansX,
@@ -121,6 +200,7 @@ fun GradientText(
     )
 }
 
+/** `.sk-sheet-btn` — the shared 38–40dp icon button of the chrome rows. */
 @Composable
 fun SkIconButton(
     icon: ImageVector,
@@ -146,6 +226,29 @@ fun SkIconButton(
 }
 
 @Composable
+fun GlassButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    active: Boolean = false,
+    shape: RoundedCornerShape = RoundedCornerShape(14.dp),
+    contentPadding: PaddingValues = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+    content: @Composable RowScope.() -> Unit
+) {
+    val sk = LocalSk.current
+    Row(
+        modifier = modifier
+            .clip(shape)
+            .background(if (active) sk.primarySoft else sk.surface)
+            .border(1.dp, if (active) sk.primary else sk.borderSoft, shape)
+            .clickableNoRipple(onClick = onClick)
+            .padding(contentPadding),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+        content = content
+    )
+}
+
+@Composable
 fun SegmentedControl(
     options: List<String>,
     selectedIndex: Int,
@@ -154,12 +257,13 @@ fun SegmentedControl(
 ) {
     val sk = LocalSk.current
     Row(
-        modifier
+        modifier = modifier
             .clip(RoundedCornerShape(20.dp))
             .background(sk.surface)
             .border(1.dp, sk.borderSoft, RoundedCornerShape(20.dp))
             .padding(5.dp),
-        horizontalArrangement = Arrangement.spacedBy(5.dp)
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
         options.forEachIndexed { i, label ->
             val active = i == selectedIndex
@@ -182,13 +286,67 @@ fun SegmentedControl(
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = IRANSansX,
-                    color = if (active) sk.primary else sk.textMuted
+                    color = if (active) sk.primary else sk.textMuted,
+                    textAlign = TextAlign.Center
                 )
             }
         }
     }
 }
 
+@Composable
+fun SkSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    val sk = LocalSk.current
+    Box(
+        modifier = Modifier
+            .width(50.dp)
+            .height(28.dp)
+            .clip(RoundedCornerShape(100))
+            .background(if (checked) sk.primary else sk.surface)
+            .border(1.dp, if (checked) sk.primary else sk.borderSoft, RoundedCornerShape(100))
+            .clickableNoRipple { onCheckedChange(!checked) }
+            .padding(3.dp),
+        contentAlignment = if (checked) Alignment.CenterStart else Alignment.CenterEnd
+    ) {
+        Box(
+            Modifier
+                .size(22.dp)
+                .clip(CircleShape)
+                .background(Color.White)
+        )
+    }
+}
+
+@Composable
+fun SectionTitle(text: String, modifier: Modifier = Modifier) {
+    val sk = LocalSk.current
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Box(
+            Modifier
+                .width(6.dp)
+                .height(14.dp)
+                .clip(RoundedCornerShape(3.dp))
+                .background(sk.primary)
+        )
+        Text(
+            text = text,
+            style = TextStyle(
+                fontFamily = IRANSansX,
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = 12.sp,
+                color = sk.textMuted
+            )
+        )
+    }
+}
+
+/** `.sk-check-badge` — the 18dp circular check of outlined pickers. */
 @Composable
 fun CheckBadge(modifier: Modifier = Modifier) {
     val sk = LocalSk.current
@@ -209,7 +367,7 @@ fun MiniBadge(group: ShiftGroup, kind: ShiftKind) {
     val kc = kindColors(kind)
     Box(
         Modifier
-            .size(15.dp)
+            .size(13.dp)
             .clip(RoundedCornerShape(5.dp))
             .background(kc.brush),
         contentAlignment = Alignment.Center
@@ -227,7 +385,7 @@ fun MiniBadge(group: ShiftGroup, kind: ShiftKind) {
 }
 
 /**
- * نشان گروه + شماره روز نوبت در سلول‌های نمای «همهٔ گروه‌ها» (مثلاً A۱، B۲)
+ * Group + ordinal badge inside "All Groups" calendar cells (`A1`, `B2`, `C4`, `D1`).
  */
 @Composable
 fun GroupNumBadge(group: ShiftGroup, code: ShiftCode) {
@@ -236,47 +394,50 @@ fun GroupNumBadge(group: ShiftGroup, code: ShiftCode) {
     val ord = toPersianDigits(shiftCodeIndex(code))
     Box(
         Modifier
-            .size(width = 19.dp, height = 13.dp)
+            .size(width = 21.dp, height = 14.dp)
             .clip(RoundedCornerShape(5.dp))
-            .background(kc.brush),
+            .background(kc.brush)
+            .border(0.6.dp, kc.ink.copy(alpha = 0.28f), RoundedCornerShape(5.dp)),
         contentAlignment = Alignment.Center
     ) {
         Text(
             "${group.faLetter()}$ord",
-            fontSize = 7.5.sp,
+            fontSize = 8.sp,
             fontWeight = FontWeight.Black,
-            lineHeight = 8.sp,
+            lineHeight = 8.5.sp,
             fontFamily = IRANSansX,
             color = kc.ink,
-            textAlign = TextAlign.Center,
-            maxLines = 1
+            textAlign = TextAlign.Center
         )
     }
 }
 
-/**
- * Elegant mini icon + shift ordinal badge for Calendar cells (e.g., [☀️ ۱], [🌇 ۲], [🌙 ۱], [🛋️ ۴]):
- * Displays the vector shift icon alongside the Persian day number of that shift phase.
- */
 @Composable
-fun ShiftDayOrdinalBadge(
-    kind: ShiftKind,
-    ordinal: Int,
-    isSwapped: Boolean = false
+fun ShiftDayOrderBadge(
+    code: ShiftCode,
+    modifier: Modifier = Modifier
 ) {
+    val kind = codeToKind(code)
     val kc = kindColors(kind)
-    val numText = if (isSwapped) "*" else toPersianDigits(ordinal)
+    val icon = kindIcon(kind)
+    val numText = toPersianDigits(shiftCodeIndex(code))
+
     Row(
-        Modifier
-            .height(19.dp)
-            .clip(RoundedCornerShape(7.dp))
+        modifier = modifier
+            .height(17.dp)
+            .clip(RoundedCornerShape(100))
             .background(kc.brush)
-            .border(0.8.dp, kc.ink.copy(alpha = 0.35f), RoundedCornerShape(7.dp))
-            .padding(horizontal = 4.5.dp),
+            .border(0.75.dp, kc.ink.copy(alpha = 0.28f), RoundedCornerShape(100))
+            .padding(horizontal = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(2.dp)
+        horizontalArrangement = Arrangement.spacedBy(2.5.dp)
     ) {
-        Icon(kindIcon(kind, 11), null, Modifier.size(11.dp), tint = kc.ink)
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(10.dp),
+            tint = kc.ink
+        )
         Text(
             numText,
             fontSize = 9.sp,
@@ -337,6 +498,8 @@ fun kindIcon(kind: ShiftKind, size: Int = 16): ImageVector = when (kind) {
 fun Modifier.clickableNoRipple(enabled: Boolean = true, onClick: () -> Unit): Modifier = composed {
     val interaction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     this.then(
+        if (enabled) Modifier.pointerHoverIcon(PointerIcon.Hand) else Modifier
+    ).then(
         Modifier.clickable(
             interactionSource = interaction,
             indication = null,
@@ -344,4 +507,20 @@ fun Modifier.clickableNoRipple(enabled: Boolean = true, onClick: () -> Unit): Mo
             onClick = onClick
         )
     )
+}
+
+/**
+ * Live Jalali date state that automatically refreshes across midnight so long-running
+ * desktop windows never freeze on yesterday's date/shift.
+ */
+@Composable
+fun rememberLiveToday(): JalaliDate {
+    val state = produceState(initialValue = todayJalaali()) {
+        while (true) {
+            delay(30_000L)
+            val now = todayJalaali()
+            if (now != value) value = now
+        }
+    }
+    return state.value
 }

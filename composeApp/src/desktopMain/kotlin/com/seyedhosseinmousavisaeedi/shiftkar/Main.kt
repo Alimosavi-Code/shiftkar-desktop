@@ -1,6 +1,5 @@
 package com.seyedhosseinmousavisaeedi.shiftkar
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -41,8 +40,9 @@ import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import com.seyedhosseinmousavisaeedi.shiftkar.data.AppSettings
 import com.seyedhosseinmousavisaeedi.shiftkar.engine.*
-import com.seyedhosseinmousavisaeedi.shiftkar.platform.PlatformBridge
+import com.seyedhosseinmousavisaeedi.shiftkar.platform.copyTextToClipboard
 import com.seyedhosseinmousavisaeedi.shiftkar.platform.createDynamicTrayAwtImage
 import com.seyedhosseinmousavisaeedi.shiftkar.platform.loadLogoImageBitmap
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.AppViewModel
@@ -79,7 +79,7 @@ import javax.swing.SwingUtilities
 fun main() = application {
     LaunchedEffect(Unit) {
         HolidaysLoader.kick()
-        CalendarSync.syncIfNeeded()
+        CalendarSync.syncInBackground()
         runCatching { Updater.cleanUpOldApkIfUpdated() }
     }
 
@@ -93,23 +93,23 @@ fun main() = application {
 
     val today = rememberLiveToday()
     val todayKey = remember(today) { makeDateKey(today.jy, today.jm, today.jd) }
-    val activePattern = remember(s.activePatternId, s.customPatterns, s.patternOverrides) {
-        ShiftEngine.resolveActivePattern(s)
+    val activePattern = remember(s.activePatternId, s.customPatterns) {
+        ShiftEngine.resolvePattern(s.activePatternId, s.customPatterns)
     }
-    val activeGroups = remember(activePattern) {
-        ShiftEngine.activeGroupsForPattern(activePattern)
+    val activeGroups = remember(s.activePatternId, s.customPatterns) {
+        ShiftEngine.activeGroups
     }
-    val myShiftToday = remember(todayKey, s.myGroup, activePattern, s.shiftOverrides) {
-        ShiftEngine.calculateShiftForSettings(todayKey, s.myGroup.toShiftGroup(), s)
+    val myShiftToday = remember(todayKey, s.myGroup, s.activePatternId, s.customPatterns) {
+        ShiftEngine.calculateShift(todayKey, s.myGroup.toShiftGroup())
     }
     val todayShiftLabel = remember(myShiftToday) {
-        CODE_FA[myShiftToday.code] ?: myShiftToday.label
+        CODE_FA[myShiftToday.code] ?: myShiftToday.code.name
     }
     val todayGroupSummary = remember(myShiftToday, s.myGroup, activePattern) {
-        if (activePattern.groupCount <= 1) {
+        if (!activePattern.hasGroups || activePattern.groupCount <= 1) {
             "شیفت امروز: $todayShiftLabel"
         } else {
-            "شیفت ${s.myGroup.toShiftGroup().name}: $todayShiftLabel"
+            "شیفت ${s.myGroup.toShiftGroup().faLetter()}: $todayShiftLabel"
         }
     }
 
@@ -123,8 +123,8 @@ fun main() = application {
     var trayMenuVisible by remember { mutableStateOf(false) }
     var trayMenuPos by remember { mutableStateOf(WindowPosition(100.dp, 100.dp)) }
 
-    val trayKindArgb = remember(myShiftToday.kind) {
-        when (myShiftToday.kind) {
+    val trayKindArgb = remember(myShiftToday.type) {
+        when (myShiftToday.type) {
             ShiftKind.DAY -> 0xFFF59E0B.toInt()
             ShiftKind.EVENING -> 0xFFF97316.toInt()
             ShiftKind.NIGHT -> 0xFF818CF8.toInt()
@@ -138,7 +138,7 @@ fun main() = application {
     // Install Live Dynamic System Tray Icon with crisp Compose right-click popup support
     DisposableEffect(Unit) {
         var installedTrayIcon: TrayIcon? = null
-        if ( runCatching { SystemTray.isSupported() }.getOrDefault(false)) {
+        if (runCatching { SystemTray.isSupported() }.getOrDefault(false)) {
             runCatching {
                 val tray = SystemTray.getSystemTray()
                 val traySize = tray.trayIconSize.width.coerceIn(16, 64)
@@ -359,17 +359,17 @@ fun main() = application {
                                 append(" ")
                                 append(formatJalali(today.jy, today.jm, today.jd))
                                 append("\n")
-                                if (activePattern.groupCount <= 1) {
+                                if (!activePattern.hasGroups || activePattern.groupCount <= 1) {
                                     append("• وضعیت شیفت: $todayShiftLabel")
                                 } else {
                                     activeGroups.forEachIndexed { idx, g ->
                                         if (idx > 0) append(" | ")
-                                        val info = ShiftEngine.calculateShiftForSettings(todayKey, g, s)
-                                        append("گروه ${g.name}: ${CODE_FA[info.code] ?: info.label}")
+                                        val info = ShiftEngine.calculateShift(todayKey, g)
+                                        append("گروه ${g.faLetter()}: ${CODE_FA[info.code] ?: info.code.name}")
                                     }
                                 }
                             }
-                            PlatformBridge.copyToClipboard("شیفت امروز", summaryText)
+                            copyTextToClipboard(summaryText)
                             ToastCenter.show("وضعیت شیفت امروز در کلیپ‌بورد کپی شد")
                         },
                         onOpenRoster = {
@@ -446,7 +446,7 @@ fun main() = application {
 private fun TrayPopupMenuContent(
     today: JalaliDate,
     todayGroupSummary: String,
-    myShiftToday: ShiftInfo,
+    myShiftToday: ShiftResult,
     widgetEnabled: Boolean,
     onOpenMain: () -> Unit,
     onGoToday: () -> Unit,
@@ -458,7 +458,7 @@ private fun TrayPopupMenuContent(
     onExit: () -> Unit
 ) {
     val sk = LocalSk.current
-    val kindColor = when (myShiftToday.kind) {
+    val kindColor = when (myShiftToday.type) {
         ShiftKind.DAY -> sk.day
         ShiftKind.EVENING -> sk.evening
         ShiftKind.NIGHT -> sk.night
@@ -472,7 +472,7 @@ private fun TrayPopupMenuContent(
             .shadow(16.dp, RoundedCornerShape(20.dp))
             .clip(RoundedCornerShape(20.dp))
             .background(sk.sheetSolid.copy(alpha = 0.96f))
-            .border(1.dp, sk.borderStrong, RoundedCornerShape(20.dp))
+            .border(1.dp, sk.border, RoundedCornerShape(20.dp))
             .padding(10.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
@@ -536,13 +536,13 @@ private fun TrayPopupMenuContent(
             onClick = onGoToday
         )
         TrayMenuItem(
-            icon = SkIcons.Sparkle,
+            icon = SkIcons.Spark,
             label = if (widgetEnabled) "مخفی کردن ویجت شناور رومیزی" else "نمایش ویجت شناور رومیزی",
             tint = sk.primary,
             onClick = onToggleWidget
         )
         TrayMenuItem(
-            icon = SkIcons.Copy,
+            icon = SkIcons.Clipboard,
             label = "کپی وضعیت شیفت امروز",
             tint = sk.text,
             onClick = onCopyTodayShift
@@ -571,7 +571,7 @@ private fun TrayPopupMenuContent(
                 .fillMaxWidth()
                 .padding(vertical = 2.dp)
                 .height(1.dp)
-                .background(sk.divider)
+                .background(sk.borderSoft)
         )
 
         TrayMenuItem(
@@ -621,9 +621,9 @@ private fun DesktopMiniWidgetCard(
     today: JalaliDate,
     todayKey: String,
     settings: AppSettings,
-    activePattern: ShiftPattern,
+    activePattern: ShiftPatternSpec,
     activeGroups: List<ShiftGroup>,
-    myShiftToday: ShiftInfo,
+    myShiftToday: ShiftResult,
     todayShiftLabel: String,
     onTogglePin: () -> Unit,
     onOpenMainWindow: () -> Unit,
@@ -631,11 +631,11 @@ private fun DesktopMiniWidgetCard(
 ) {
     val sk = LocalSk.current
     val alpha = settings.widgetOpacity.coerceIn(0.45f, 1.0f)
-    val holidayInfo = remember(today) { getHolidayInfo(today.jy, today.jm, today.jd) }
+    val isHolidayToday = remember(today) { Holidays.isHoliday(today.jy, today.jm, today.jd) }
     val greg = remember(today) { toGregorian(today.jy, today.jm, today.jd) }
     val hijri = remember(today) { toHijri(today.jy, today.jm, today.jd) }
 
-    val myKindColor = when (myShiftToday.kind) {
+    val myKindColor = when (myShiftToday.type) {
         ShiftKind.DAY -> sk.day
         ShiftKind.EVENING -> sk.evening
         ShiftKind.NIGHT -> sk.night
@@ -656,7 +656,7 @@ private fun DesktopMiniWidgetCard(
                     )
                 )
             )
-            .border(1.dp, sk.borderStrong, RoundedCornerShape(24.dp))
+            .border(1.dp, sk.border, RoundedCornerShape(24.dp))
             .padding(horizontal = 14.dp, vertical = 12.dp)
     ) {
         Column(
@@ -769,7 +769,7 @@ private fun DesktopMiniWidgetCard(
                         fontSize = 14.5.sp,
                         fontWeight = FontWeight.Black,
                         fontFamily = IRANSansX,
-                        color = if (holidayInfo.isOfficialHoliday) sk.holiday else sk.text
+                        color = if (isHolidayToday) sk.holiday else sk.text
                     )
                     Text(
                         "${formatGregorian(greg.gy, greg.gm, greg.gd)}  •  ${formatHijri(hijri.hy, hijri.hm, hijri.hd)}",
@@ -788,8 +788,8 @@ private fun DesktopMiniWidgetCard(
                         .padding(horizontal = 10.dp, vertical = 6.dp)
                 ) {
                     Text(
-                        if (activePattern.groupCount <= 1) todayShiftLabel
-                        else "شیفت ${settings.myGroup.toShiftGroup().name}: $todayShiftLabel",
+                        if (!activePattern.hasGroups || activePattern.groupCount <= 1) todayShiftLabel
+                        else "شیفت ${settings.myGroup.toShiftGroup().faLetter()}: $todayShiftLabel",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Black,
                         fontFamily = IRANSansX,
@@ -798,15 +798,15 @@ private fun DesktopMiniWidgetCard(
                 }
             }
 
-            // Bottom: All Shift Groups at a glance (up to 4 or 8 groups)
-            if (activePattern.groupCount > 1) {
+            // Bottom: All Shift Groups at a glance (up to 4 groups)
+            if (activePattern.hasGroups && activePattern.groupCount > 1) {
                 Row(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     activeGroups.take(4).forEach { g ->
-                        val info = ShiftEngine.calculateShiftForSettings(todayKey, g, settings)
-                        val gColor = when (info.kind) {
+                        val info = ShiftEngine.calculateShift(todayKey, g)
+                        val gColor = when (info.type) {
                             ShiftKind.DAY -> sk.day
                             ShiftKind.EVENING -> sk.evening
                             ShiftKind.NIGHT -> sk.night
@@ -828,7 +828,7 @@ private fun DesktopMiniWidgetCard(
                             verticalArrangement = Arrangement.spacedBy(2.dp)
                         ) {
                             Text(
-                                "گروه ${g.name}",
+                                "گروه ${g.faLetter()}",
                                 fontSize = 9.5.sp,
                                 fontWeight = FontWeight.Black,
                                 fontFamily = IRANSansX,
@@ -836,7 +836,7 @@ private fun DesktopMiniWidgetCard(
                                 textAlign = TextAlign.Center
                             )
                             Text(
-                                CODE_SHORT_FA[info.code] ?: info.label,
+                                CODE_NUM_FA[info.code] ?: info.code.name,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = IRANSansX,

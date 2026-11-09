@@ -67,7 +67,7 @@ class EngineMultiplatformTest {
         assertEquals(3, shiftCodeIndex(ShiftCode.R3))
         assertEquals(4, shiftCodeIndex(ShiftCode.R4))
         assertTrue(GROUPS.size == 4)
-        assertTrue(ALL_GROUPS.size == 8)
-        assertTrue(ShiftEngine.PRESETS.size >= 45)
+        assertTrue(ALL_SHIFT_GROUPS.size == 8)
+        assertTrue(ShiftEngine.PRESET_PATTERNS.size >= 45)
     }
 }

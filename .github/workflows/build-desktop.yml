@@ -253,6 +253,7 @@ jobs:
         shell: powershell
         run: |
           .\gradlew.bat :composeApp:packageMsi :composeApp:packageExe :composeApp:createDistributable --stacktrace --no-daemon
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           New-Item -ItemType Directory -Force -Path "dist\windows-x64" | Out-Null
           Get-ChildItem "composeApp\build\compose\binaries\main\msi\*.msi" | ForEach-Object {
             Copy-Item $_.FullName -Destination "dist\windows-x64\ShiftKar-$($env:APP_VERSION)-windows-x64.msi"
@@ -307,6 +308,7 @@ jobs:
         shell: powershell
         run: |
           .\gradlew.bat :composeApp:packageMsi :composeApp:packageExe :composeApp:createDistributable --stacktrace --no-daemon
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           New-Item -ItemType Directory -Force -Path "dist\windows-arm64" | Out-Null
           Compress-Archive -Path "composeApp\build\compose\binaries\main\app\*" -DestinationPath "dist\windows-arm64\ShiftKar-$($env:APP_VERSION)-windows-arm64-portable.zip" -Force
           Get-ChildItem "composeApp\build\compose\binaries\main\exe\*.exe" -ErrorAction SilentlyContinue | ForEach-Object {

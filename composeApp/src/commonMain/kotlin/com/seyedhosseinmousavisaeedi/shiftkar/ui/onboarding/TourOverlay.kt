@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathOperation
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -29,7 +30,7 @@ import com.seyedhosseinmousavisaeedi.shiftkar.ui.theme.IRANSansX
 import com.seyedhosseinmousavisaeedi.shiftkar.ui.theme.LocalSk
 
 /**
- * Guided tour (v6.5.4) — 6-step spotlight tour with smart non-overlapping tooltip positioning:
+ * Guided tour (v6.7.3) — 6-step spotlight tour with smart non-overlapping tooltip positioning:
  *  1) today-banner  — وضعیت شیفت امروز شما
  *  2) month-nav     — جابه‌جایی ماه، یادداشت‌ها و نمای جدولی
  *  3) group-filter  — فیلتر گروه، مقایسهٔ استراحت مشترک و خروجی تصویر
@@ -51,25 +52,25 @@ val TOUR_STEPS = listOf(
     TourStep(
         "today-banner",
         "وضعیت شیفت امروز شما",
-        "در این کارت، نوبت امروز شما (صبح‌کار، عصرکار، شب‌کار یا استراحت) به‌همراه شمارهٔ روز نوبت، ساعت اضافه‌کاری یا جابه‌جایی ثبت‌شده نمایش داده می‌شود. با لمس آن، جزئیات کامل امروز باز می‌شود.",
+        "در این کارت، نوبت امروز شما (صبح‌کار، عصرکار، شب‌کار یا استراحت) به‌همراه شمارهٔ روز نوبت، ساعت اضافه‌کاری یا جابه‌جایی ثبت‌شده نمایش داده می‌شود. با کلیک روی آن، جزئیات کامل امروز باز می‌شود.",
         TourStep.Placement.BELOW
     ),
     TourStep(
         "month-nav",
         "جابه‌جایی ماه، یادداشت‌ها و نمای جدولی",
-        "با فلش‌ها یا کشیدن انگشت بین ماه‌ها جابه‌جا شوید، روی نام ماه بزنید تا سریع به هر سال و ماهی بروید، از آیکون یادداشت‌ها همهٔ یادداشت‌ها را مرور کنید یا بین نمای شبکه‌ای و جدولی تمام‌صفحه سوئیچ نمایید.",
+        "با فلش‌ها یا کشیدن ماوس بین ماه‌ها جابه‌جا شوید، روی نام ماه کلیک کنید تا سریع به هر سال و ماهی بروید، از آیکون یادداشت‌ها همهٔ یادداشت‌ها را مرور کنید یا بین نمای شبکه‌ای و جدولی تمام‌صفحه سوئیچ نمایید.",
         TourStep.Placement.BELOW
     ),
     TourStep(
         "group-filter",
         "فیلتر گروه، مقایسهٔ دو شیفت و خروجی عکس",
-        "بین گروه‌ها یا حالت «همه» جابه‌جا شوید. نکتهٔ کاربردی: با نگه‌داشتن انگشت (لمس طولانی) روی یک گروه دیگر، روزهای استراحت مشترک دو شیفت در تقویم هایلایت می‌شود! دکمهٔ تصویر هم خروجی PNG ماه را می‌سازد.",
+        "بین گروه‌ها یا حالت «همه» جابه‌جا شوید. نکتهٔ کاربردی: با نگه‌داشتن کلیک روی یک گروه دیگر، روزهای استراحت مشترک دو شیفت در تقویم هایلایت می‌شود! دکمهٔ تصویر هم خروجی PNG ماه را می‌سازد.",
         TourStep.Placement.BELOW
     ),
     TourStep(
         "today-cell",
         "نشانگر روزِ شیفت، اضافه‌کاری و جابه‌جایی",
-        "در هر خانهٔ تقویم، آیکون شیفت به‌همراه شمارهٔ روز آن نوبت (مثلاً خورشید ۱ یا ماه ۲) دیده می‌شود. با لمس هر روز می‌توانید یادداشت، ساعت اضافه‌کاری و جابه‌جایی شیفت ثبت کنید و وضعیت همکاران را ببینید.",
+        "در هر خانهٔ تقویم، آیکون شیفت به‌همراه شمارهٔ روز آن نوبت (مثلاً خورشید ۱ یا ماه ۲) دیده می‌شود. با کلیک روی هر روز می‌توانید یادداشت، ساعت اضافه‌کاری و جابه‌جایی شیفت ثبت کنید و وضعیت همکاران را ببینید.",
         TourStep.Placement.ABOVE
     ),
     TourStep(
@@ -88,7 +89,7 @@ val TOUR_STEPS = listOf(
 
 /** Registry: tour target key -> global bounds. */
 object TourRegistry {
-    val bounds = androidx.compose.runtime.mutableStateMapOf<String, Rect>()
+    val bounds = mutableStateMapOf<String, Rect>()
 }
 
 @Composable
@@ -102,24 +103,23 @@ fun TourOverlay(
     val sk = LocalSk.current
     val step = TOUR_STEPS[stepIndex.coerceIn(0, TOUR_STEPS.lastIndex)]
     val box = TourRegistry.bounds[step.targetKey]
-
-
-    val density = androidx.compose.ui.platform.LocalDensity.current
-    val screenH = androidx.compose.ui.platform.LocalView.current.height.toFloat().coerceAtLeast(1f)
+    val density = LocalDensity.current
     var measuredTooltipH by remember { mutableIntStateOf(with(density) { 215.dp.toPx().toInt() }) }
 
-    Box(
+    BoxWithConstraints(
         Modifier
             .fillMaxSize()
             .clickable(
-                interactionSource = androidx.compose.foundation.interaction.MutableInteractionSource(),
+                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
                 indication = null
             ) { onNext() }
     ) {
+        val screenH = with(density) { maxHeight.toPx() }.coerceAtLeast(1f)
+
         /* spotlight: dim layer with glowing primary ring around cutout */
         val ringColor = sk.primary
         Canvas(Modifier.fillMaxSize()) {
-            val full = Path().apply { addRect(androidx.compose.ui.geometry.Rect(0f, 0f, size.width, size.height)) }
+            val full = Path().apply { addRect(Rect(0f, 0f, size.width, size.height)) }
             if (box != null) {
                 val pad = 8f
                 val l = (box.left - pad).coerceAtLeast(4f)

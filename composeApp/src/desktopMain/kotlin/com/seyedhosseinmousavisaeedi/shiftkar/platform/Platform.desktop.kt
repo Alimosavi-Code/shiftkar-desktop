@@ -452,3 +452,60 @@ actual suspend fun httpGetText(url: String): String = withContext(Dispatchers.IO
         resp.body?.string() ?: ""
     }
 }
+
+
+/**
+ * Generates a crisp AWT BufferedImage for the OS System Tray icon showing today's
+ * Persian day number (`۱..۳۱`) inside a rounded dark glass badge with a shift-colored border.
+ */
+fun createDynamicTrayAwtImage(
+    dayText: String,
+    badgeArgb: Int,
+    size: Int = 32
+): BufferedImage {
+    val s = size.coerceIn(16, 64)
+    val img = BufferedImage(s, s, BufferedImage.TYPE_INT_ARGB)
+    val g2 = img.createGraphics()
+    g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+    g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
+
+    val pad = (s * 0.06f).toInt().coerceAtLeast(1)
+    val arc = (s * 0.36f).toInt().coerceAtLeast(6)
+
+    // Dark glass background
+    g2.color = Color(15, 21, 38, 245)
+    g2.fillRoundRect(pad, pad, s - pad * 2, s - pad * 2, arc, arc)
+
+    // Shift color accent ring
+    val r = (badgeArgb shr 16) and 0xFF
+    val g = (badgeArgb shr 8) and 0xFF
+    val b = badgeArgb and 0xFF
+    val strokeW = (s * 0.085f).coerceAtLeast(1.6f)
+    g2.stroke = BasicStroke(strokeW)
+    g2.color = Color(r, g, b, 240)
+    g2.drawRoundRect(pad, pad, s - pad * 2 - 1, s - pad * 2 - 1, arc, arc)
+
+    // Top shift indicator dot
+    val dotSize = (s * 0.16f).toInt().coerceAtLeast(3)
+    g2.color = Color(r, g, b, 255)
+    g2.fillOval((s - dotSize) / 2, pad + (s * 0.08f).toInt(), dotSize, dotSize)
+
+    // Persian day number
+    val fontSize = if (dayText.length >= 2) (s * 0.44f) else (s * 0.50f)
+    val awtFont = runCatching {
+        val fontBytes = loadBundledFontBytes("iransansx_black.ttf")
+        java.awt.Font.createFont(java.awt.Font.TRUETYPE_FONT, ByteArrayInputStream(fontBytes))
+            .deriveFont(java.awt.Font.BOLD, fontSize)
+    }.getOrElse {
+        java.awt.Font("SansSerif", java.awt.Font.BOLD, fontSize.toInt().coerceAtLeast(9))
+    }
+    g2.font = awtFont
+    g2.color = Color(245, 247, 255, 255)
+    val fm = g2.fontMetrics
+    val tw = fm.stringWidth(dayText)
+    val tx = ((s - tw) / 2f).toInt()
+    val ty = ((s + fm.ascent - fm.descent) / 2f + s * 0.06f).toInt()
+    g2.drawString(dayText, tx, ty)
+    g2.dispose()
+    return img
+}
